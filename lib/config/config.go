@@ -120,6 +120,7 @@ func New(myID protocol.DeviceID) Configuration {
 	cfg.Options.UnackedNotificationIDs = []string{"authenticationUserAndPassword"}
 
 	structutil.SetDefaults(&cfg)
+	cfg.organisationOSDefaults()
 
 	// Can't happen.
 	if err := cfg.prepare(myID); err != nil {
@@ -144,6 +145,11 @@ func (cfg *Configuration) ProbeFreePorts() error {
 			return fmt.Errorf("get free port (GUI): %w", err)
 		}
 		cfg.GUI.RawAddress = net.JoinHostPort(guiHost, strconv.Itoa(port))
+	}
+
+	// OrganisationOS explicit listening policy must survive automatic GUI port probing.
+	if len(cfg.Options.RawListenAddresses) == 1 && cfg.Options.RawListenAddresses[0] == "tcp://127.0.0.1:22000" {
+		return nil
 	}
 
 	port, err := getFreePort("0.0.0.0", DefaultTCPPort)

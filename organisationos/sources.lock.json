@@ -1,0 +1,14 @@
+{
+  "schema": "organisationos-syncthing-source-lock-v1",
+  "upstream": "https://github.com/syncthing/syncthing",
+  "tag": "v2.1.6",
+  "tagObject": "28000330a4f4f24e03018333ab31846774c6a9a1",
+  "commit": "4461a1ce354d3990660966ad70176e00246adb61",
+  "forkVersion": "v2.1.6-oos.1",
+  "goVersion": "1.27.3",
+  "goArchiveSha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+  "goModSha256": "662df3ffa3c343206bf9107e07eb0846c1cafafad37e74264e67ae6bc12a2806",
+  "goSumSha256": "4b86a1169f26107ceba7f59df7226a9756eb8fa5cb181a000276e120dead93f3",
+  "buildStatus": "NOT_BUILT",
+  "distributionStatus": "NOT_DISTRIBUTED"
+}
