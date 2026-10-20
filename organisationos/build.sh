@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 set -euo pipefail
 cd /work
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/work
 mkdir -p organisationos-output organisationos-evidence
 exec > >(tee organisationos-evidence/build.log) 2>&1
 trap 's=$?; echo "$s" > organisationos-evidence/exit-status; exit "$s"' EXIT
