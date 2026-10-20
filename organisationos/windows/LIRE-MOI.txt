@@ -7,7 +7,7 @@ Aucune signature Authenticode n'est revendiquée. Vérifiez le SHA-256 de l'arch
 publié dans le catalogue authentifié avant l'extraction. Le script contrôle
 ensuite le SHA-256 du moteur inscrit dans provenance.json.
 
-Installation prévue sur le poste autorisé 10.9.5.90, par exécution locale :
+Installation prévue sur le poste Windows autorisé, par exécution locale :
 1. Extraire l'archive dans un répertoire temporaire vide.
 2. Ouvrir PowerShell dans ce répertoire et exécuter :
    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Installer-Qualification.ps1 -Qualification
