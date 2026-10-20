@@ -1,0 +1,38 @@
+OrganisationOS Syncthing — client portable de qualification 0.1.0
+Moteur : v2.1.6-oos.1, fork OrganisationOS du projet Syncthing.
+
+Ce paquet prépare un essai Windows, pas une connexion GED déjà configurée.
+Le moteur, notre intégration GED et cet installateur ont des réceptions distinctes.
+Aucune signature Authenticode n'est revendiquée. Vérifiez le SHA-256 de l'archive
+publié dans le catalogue authentifié avant l'extraction. Le script contrôle
+ensuite le SHA-256 du moteur inscrit dans provenance.json.
+
+Installation prévue sur le poste autorisé 10.9.5.90, par exécution locale :
+1. Extraire l'archive dans un répertoire temporaire vide.
+2. Ouvrir PowerShell dans ce répertoire et exécuter :
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Installer-Qualification.ps1 -Qualification
+   L'option de stratégie ne s'applique qu'à ce processus PowerShell.
+3. Le script installe dans %LOCALAPPDATA%\OrganisationOS\Syncthing-Qualification.
+   Il crée une identité neuve et supprime toute sélection de dossier initiale.
+   Il ne touche ni RustDesk, ni Documents, ni Bureau, ni Images.
+4. Lancer Demarrer.cmd depuis le chemin affiché. L'interface est accessible
+   uniquement sur l'adresse locale affichée. Arrêter avec Ctrl+C dans cette fenêtre.
+   Aucun service, démarrage automatique, règle de pare-feu ou redémarrage ajouté.
+5. Transmettre seulement l'identifiant PUBLIC du nouvel appareil pour l'appairage
+   de qualification. Ne jamais transmettre config.xml, clés, certificats privés
+   ou clé API. Attendre les paramètres du serveur de qualification et le dossier
+   autorisé ; ne pas ajouter de dossier personnel.
+
+Réception attendue : installation, appairage, fichier synthétique aller-retour,
+arrêt local/modification hors ligne/reprise, modifications concurrentes et conflit,
+puis révocation côté serveur et refus du transfert suivant. La réussite sur DEV
+ne remplace pas ces essais Windows. Aucun essai Windows n'a encore été effectué.
+
+Retrait : révoquer cet appareil côté serveur, arrêter sa fenêtre Demarrer.cmd,
+puis supprimer uniquement le répertoire Syncthing-Qualification créé par cet essai.
+Les éventuels clients existants et leurs répertoires restent indépendants.
+
+Licences : MPL-2.0, LICENSE.txt et AUTHORS.txt conservés ; notices tierces incluses.
+Le code correspondant au moteur, son commit et la recette figurent dans provenance.json.
+Dépôt : https://github.com/Organisation-OS/OrganisationOS-Syncthing
+Il s'agit d'une distribution dérivée, sans approbation revendiquée de Syncthing.
