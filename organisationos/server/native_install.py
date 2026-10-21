@@ -57,8 +57,18 @@ def unpack(raw,a):
 
 def worker_environment(runtime,config):
  if runtime.get('adapter')=='historical-web-v1':return ''
- path=trusted(P(config)/'core.env')
- return 'EnvironmentFile='+str(path)+'\n'
+ path=P(config)/'core.env'
+ if path.exists():return 'EnvironmentFile='+str(trusted(path))+'\n'
+ # The native generic production service uses systemd Environment directives.
+ # Reuse only its public runtime bindings; never serialize credentials into a unit.
+ import shlex
+ unit=runtime['unit_prefix']+'-core.service'
+ fragment=run(['/usr/bin/systemctl','show',unit,'--property=FragmentPath','--value']).decode().strip();trusted(fragment)
+ entries=shlex.split(run(['/usr/bin/systemctl','show',unit,'--property=Environment','--value']).decode())
+ allowed={'ORG_CONFIGURATION_PATH','ORG_LOG','ORG_AUTHORIZATION_DATABASE_ENABLED','ORG_AUTHORIZATION_DATABASE_SOCKET','ORG_AUTHORIZATION_DATABASE_NAME','ORG_AUTHORIZATION_DATABASE_USER','ORG_AUTH_SESSION_STORE','ORG_AUTH_SESSION_PATH','ORG_AUTH_TRANSACTION_PATH','ORG_AUTH_FLOW_SECRET_STORE','ORG_PROFILE_AVATAR_STORE','ORG_PROFILE_AVATAR_PATH','ORG_IDENTITY_ADMISSION_ENABLED','ORG_AUTH_INTERACTIVE_PROVIDER','ORG_DOCUMENTS_STORAGE_ROOT','ORG_CORS_ALLOWED_ORIGINS','ORG_CORS_ALLOW_CREDENTIALS','ORG_DOCUMENTS_CLAMD_SOCKET','ORG_DOCUMENTS_CLAM_SIGNATURE','ORG_UPDATE_STATUS_PATH','ORG_UPDATE_REQUEST_PATH','ORG_API_URL','ORG_PORTAL_URL','ORG_HOOKS_URL'}
+ values={k:v for entry in entries for k,v in [entry.split('=',1)]if k in allowed}
+ need(values.get('ORG_CONFIGURATION_PATH')==str(config) and all(k in values for k in ['ORG_LOG','ORG_AUTHORIZATION_DATABASE_SOCKET','ORG_DOCUMENTS_STORAGE_ROOT']))
+ return ''.join('Environment='+json.dumps(k+'='+v,ensure_ascii=False).replace('%','%%')+'\n'for k,v in sorted(values.items()))
 
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--supervisor',required=True);ap.add_argument('--envelope',required=True);ap.add_argument('--artifact',required=True);ap.add_argument('--preflight',action='store_true');args=ap.parse_args();need(os.geteuid()==0)
