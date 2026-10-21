@@ -55,6 +55,11 @@ def unpack(raw,a):
  provenance=json.loads(files['runtime-provenance.json']);need(provenance['sourceCommit']==a['sourceCommit'] and provenance['engineCommit']==a['engineCommit'] and provenance['files']=={k:digest(v)for k,v in files.items()if k!='runtime-provenance.json'})
  return files
 
+def worker_environment(runtime,config):
+ if runtime.get('adapter')=='historical-web-v1':return ''
+ path=trusted(P(config)/'core.env')
+ return 'EnvironmentFile='+str(path)+'\n'
+
 def main():
  ap=argparse.ArgumentParser();ap.add_argument('--supervisor',required=True);ap.add_argument('--envelope',required=True);ap.add_argument('--artifact',required=True);ap.add_argument('--preflight',action='store_true');args=ap.parse_args();need(os.geteuid()==0)
  s=read(trusted(args.supervisor));policy=read(trusted(s['policy']));native=read(trusted(s['config']));identity=read(trusted(P(s['state'])/'identity.json'))
@@ -85,6 +90,19 @@ def main():
   projection=storage/'projections';directory(projection,0o700,user.pw_uid,user.pw_gid)
   directory('/etc/organisationos-syncthing',0o755)
   descriptor={'schema':1,'instanceId':m['instanceId'],'projectionRoot':str(projection),'engineBinary':str(release/'organisationos-syncthing'),'engineConfig':str(home/'config.xml'),'serverDeviceKey':generated['deviceId'],'publicEndpoint':'tcp://'+hostname+':22000','coreUid':core.pw_uid,'socket':'/run/organisation-syncthing/broker.sock'}
+  migrating=state.get('artifactSha256') not in [None,m['artifact']['sha256']]
+  environment=worker_environment(runtime,config)
+  if migrating:
+   need(state.get('artifactSha256')=='5c4b74f4cd2207a2767378b1adb04d0e413bae83e237bb0829411bfef3ccdf13' and not state.get('workerActivated'))
+   import xml.etree.ElementTree as ET
+   priorconfig=ET.parse(home/'config.xml').getroot();need(not priorconfig.findall('folder') and all(d.get('id')==generated['deviceId']for d in priorconfig.findall('device')))
+   previousRelease='/opt/organisationos-syncthing/releases/'+state['artifactSha256']
+   backups=parent/('migration-'+state['artifactSha256']);directory(backups,0o700)
+   p=P('/etc/organisationos-syncthing/service.json');old={**descriptor,'engineBinary':previousRelease+'/organisationos-syncthing'};trusted(p)
+   need(read(p) in [old,descriptor]);write(backups/'service.json',old,0o600)
+   fd,temp=tempfile.mkstemp(prefix='.service-',dir=p.parent)
+   with os.fdopen(fd,'wb')as f:os.fchown(f.fileno(),0,user.pw_gid);os.fchmod(f.fileno(),0o640);f.write(canonical(descriptor)+b'\n');f.flush();os.fsync(f.fileno())
+   os.replace(temp,p)
   write('/etc/organisationos-syncthing/service.json',descriptor,0o640,0,user.pw_gid);write('/etc/organisationos-syncthing/firewall.json',{'listenIp':listen,'proxyIp':proxy},0o644)
   launch={'schema':1,'instanceId':m['instanceId'],'configurationPath':str(config),'adapter':runtime.get('adapter'),'coreMarker':runtime.get('core_marker'),'coreReleases':runtime.get('core_releases'),'corePath':str(P(policy['prefix'])/'active/core'),'moduleBinding':str(config),'moduleRegistry':read(trusted(P('/etc/organisation-module-runtimes')/(digest(str(config).encode())+'.json')))['registry_path']}
   write('/etc/organisationos-syncthing/worker.json',launch,0o644)
@@ -94,18 +112,11 @@ def main():
   'organisationos-syncthing.service':'[Unit]\nDescription=OrganisationOS Syncthing engine\nAfter=network-online.target organisationos-syncthing-firewall.service\nRequires=organisationos-syncthing-firewall.service\n[Service]\nUser='+user.pw_name+'\nGroup='+user.pw_name+'\nExecCondition=+/usr/bin/python3 '+str(release/'worker-launcher.py')+' --check-module\nExecStart='+str(release/'organisationos-syncthing')+' serve --home '+str(home)+' --no-browser --no-restart --no-upgrade --no-port-probing\nRestart=on-failure\nRestartSec=10\nTimeoutStopSec=60\nMemoryMax=768M\n'+common+'ReadWritePaths='+str(storage)+'\n[Install]\nWantedBy=multi-user.target\n',
   'organisationos-syncthing-broker.socket':'[Unit]\nDescription=OrganisationOS private GED synchronization broker\n[Socket]\nListenStream=/run/organisation-syncthing/broker.sock\nSocketUser='+core.pw_name+'\nSocketGroup='+core.pw_name+'\nSocketMode=0600\nDirectoryMode=0755\nRemoveOnStop=yes\n[Install]\nWantedBy=sockets.target\n',
   'organisationos-syncthing-broker.service':'[Unit]\nDescription=OrganisationOS restricted local engine adapter\nAfter=organisationos-syncthing.service\nRequires=organisationos-syncthing.service\n[Service]\nUser='+user.pw_name+'\nGroup='+user.pw_name+'\nExecStart=/usr/bin/python3 '+str(release/'broker.py')+' /etc/organisationos-syncthing/service.json\nMemoryMax=512M\n'+common+'ReadWritePaths='+str(projection)+'\n',
-  'organisationos-offline-worker.service':'[Unit]\nDescription=OrganisationOS authorized offline projections and GED admission\nAfter=organisationos-syncthing.service\n[Service]\nType=oneshot\nUser='+core.pw_name+'\nGroup='+core.pw_name+'\nExecStart=/usr/bin/python3 '+str(release/'worker-launcher.py')+'\nTimeoutStartSec=240\nMemoryMax=768M\nUMask=0077\nNoNewPrivileges=yes\nPrivateTmp=yes\n',
+  'organisationos-offline-worker.service':'[Unit]\nDescription=OrganisationOS authorized offline projections and GED admission\nAfter=organisationos-syncthing.service\n[Service]\nType=oneshot\n'+environment+'User='+core.pw_name+'\nGroup='+core.pw_name+'\nExecStart=/usr/bin/python3 '+str(release/'worker-launcher.py')+'\nTimeoutStartSec=240\nMemoryMax=768M\nUMask=0077\nNoNewPrivileges=yes\nPrivateTmp=yes\n',
   'organisationos-offline-worker.timer':'[Unit]\nDescription=OrganisationOS bounded offline reconciliation\n[Timer]\nOnBootSec=90\nOnUnitInactiveSec=60\nAccuracySec=10\nUnit=organisationos-offline-worker.service\n[Install]\nWantedBy=timers.target\n'}
-  migrating=state.get('artifactSha256') not in [None,m['artifact']['sha256']]
   if migrating:
-   # Only the initial empty, worker-disabled release is eligible for this custody migration.
-   need(state.get('artifactSha256')=='683f7e6e12835327105c6c4a037134a971e06e18e5ef5a028fade2231869eb3e' and not state.get('workerActivated'))
-   import xml.etree.ElementTree as ET
-   priorconfig=ET.parse(home/'config.xml').getroot();need(not priorconfig.findall('folder') and all(d.get('id')==generated['deviceId'] for d in priorconfig.findall('device')))
-   previousRelease='/opt/organisationos-syncthing/releases/'+state['artifactSha256']
-   backups=parent/'initial-unit-custody';directory(backups,0o700)
    for name,content in units.items():
-    p=P('/etc/systemd/system')/name;old=content.replace(str(release),previousRelease).replace('/etc/organisationos-syncthing','/etc/organisation/syncthing').encode();trusted(p)
+    p=P('/etc/systemd/system')/name;old=content.replace(str(release),previousRelease).replace(environment,'').encode();trusted(p)
     need(p.read_bytes() in [old,content.encode()]);write(backups/name,old,0o600)
    run(['/usr/bin/systemctl','stop','organisationos-syncthing-broker.socket','organisationos-syncthing-broker.service','organisationos-syncthing.service'])
    for name,content in units.items():
