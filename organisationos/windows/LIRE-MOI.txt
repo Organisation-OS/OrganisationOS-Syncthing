@@ -36,3 +36,11 @@ Licences : MPL-2.0, LICENSE.txt et AUTHORS.txt conservés ; notices tierces incl
 Le code correspondant au moteur, son commit et la recette figurent dans provenance.json.
 Dépôt : https://github.com/Organisation-OS/OrganisationOS-Syncthing
 Il s'agit d'une distribution dérivée, sans approbation revendiquée de Syncthing.
+
+Version du paquet 0.2.0 : moteur 2.1.6-oos.2 avec correction preventive de
+l'entree locale chiffree. Signature Authenticode absente. Reception Windows
+de cette version encore requise; les essais de 0.1.0 restent distincts.
+Pour une installation existante : conserver Etat, Fichiers-synthetiques et
+les conflits; arreter le moteur puis utiliser MettreAJour-Qualification.ps1
+-Qualification. Cette mise a jour ne lance ni ne reconnecte le client.
+Ne pas executer cette reception cette nuit; elle est reportee avec vous.

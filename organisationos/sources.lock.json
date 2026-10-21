@@ -9,12 +9,13 @@
   "goArchiveSha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
   "goModSha256": "662df3ffa3c343206bf9107e07eb0846c1cafafad37e74264e67ae6bc12a2806",
   "goSumSha256": "4b86a1169f26107ceba7f59df7226a9756eb8fa5cb181a000276e120dead93f3",
-  "buildStatus": "PENDING_NEW_BUILD",
+  "buildStatus": "PASS_TWO_IDENTICAL_BUILDS",
   "distributionStatus": "NOT_DISTRIBUTED",
   "previousQualificationRelease": {
     "version": "v2.1.6-oos.1",
     "engineSourceCommit": "3224efdefffef2d57ccaced4e398f49f79e08dc8",
     "buildReceipt": "build-receipt-20261020.json",
     "windowsReception": "windows/RECEPTION-20261021.md"
-  }
+  },
+  "buildReceipt": "build-receipt-20261021-oos2.json"
 }

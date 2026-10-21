@@ -1,0 +1,42 @@
+{
+  "schema": "oos-syncthing-build-receipt-v1",
+  "status": "PASS",
+  "repository": "https://github.com/Organisation-OS/OrganisationOS-Syncthing",
+  "sourceCommit": "e80f807467f5e127f35e2de45cfd22d4091bcd42",
+  "upstreamTag": "v2.1.6",
+  "upstreamCommit": "4461a1ce354d3990660966ad70176e00246adb61",
+  "builderImage": "sha256:f4723252fe7167ef67cb0bd6a952dce9c78153b3a1d4ae87f523c01f4dd9d0b1",
+  "runtimeVersion": "syncthing v2.1.6-oos.2 \"Hafnium Hornet\" (go1.27.3 linux-amd64) OrganisationOS@DEV 2026-10-06 00:00:00 UTC [noupgrade]",
+  "twoBuildsIdentical": true,
+  "rebuildScope": "same pinned container image; Go build cache purged between passes",
+  "moduleIntegrity": "go mod verify PASS",
+  "testPackages": [
+    "config",
+    "build",
+    "protocol",
+    "scanner",
+    "fs",
+    "model"
+  ],
+  "binaries": [
+    {
+      "platform": "linux-amd64",
+      "filename": "organisationos-syncthing",
+      "size": 29363136,
+      "sha256": "9eaf8cad615cfb07f17af7b87f0e3e77e5a99d902c6f971909bcca4bd3102d6b"
+    },
+    {
+      "platform": "windows-amd64",
+      "filename": "organisationos-syncthing.exe",
+      "size": 29526530,
+      "sha256": "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
+    }
+  ],
+  "windowsAuthenticode": "UNSIGNED",
+  "windowsReception": "NOT_RUN",
+  "windowsFileVersionResource": "ABSENT: upstream optional goversioninfo not installed; use exact manifest and --version",
+  "distributionStatus": "CANDIDATE_NOT_DISTRIBUTED",
+  "buildLogSha256": "04a1d8a88e13899a47886d8081c77c945e56b9387a2f27e7058219dc4eecdfe7",
+  "preventiveLocalEncryptionFix": "caea980890e85095923ba0ec3880ee496839d93c",
+  "builtAt": "2026-10-21T04:15:15Z"
+}
