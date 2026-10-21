@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "checks": [
+    "parsed:Installer-Qualification.ps1",
+    "parsed:MettreAJour-Qualification.ps1",
+    "upgrade_from_exact_old_PE_without_execution",
+    "idempotent_new_binary_replay",
+    "identity_config_and_conflict_bytes_unchanged",
+    "original_executable_retained"
+  ],
+  "runtime": "7.6.6",
+  "platform": "POWERSHELL_ON_LINUX",
+  "windowsExecution": false,
+  "engineStarted": false,
+  "syntheticOnly": true,
+  "currentPEsha256": "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
+}

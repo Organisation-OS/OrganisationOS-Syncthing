@@ -1,0 +1,19 @@
+{
+  "schema": "oos-syncthing-distribution-receipt-v1",
+  "status": "PUBLISHED_PRIVATE_QUALIFICATION_ONLY",
+  "packageVersion": "0.2.0",
+  "engineVersion": "2.1.6-oos.2",
+  "engineCommit": "e80f807467f5e127f35e2de45cfd22d4091bcd42",
+  "installerCommit": "550da2887b83df60d7483b5fdf743bb66bc99c4b",
+  "windowsPEsha256": "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b",
+  "zipSha256": "6f12bdf1cc690dba548570d6a5636da2c75c6157252cc8f79b4b153b7ca04461",
+  "zipBytes": 18104813,
+  "manifestSignature": "NATIVE_CP_ED25519_VERIFIED",
+  "authenticode": "UNSIGNED",
+  "actualBrowserDownload": "SHA256_MATCH",
+  "anonymousDirectDownload": "401",
+  "workstationInstalled": false,
+  "cleanWindowsReception": "DEFERRED_WITH_USER",
+  "generalEmployeeDistribution": false,
+  "serverProductionInstalled": false
+}

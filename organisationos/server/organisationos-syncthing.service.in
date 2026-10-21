@@ -1,0 +1,26 @@
+[Unit]
+Description=OrganisationOS Syncthing engine (document admission is a separate service)
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=organisationos-syncthing
+Group=organisationos-syncthing
+ExecStart=/opt/organisationos-syncthing/releases/@ENGINE_SHA256@/organisationos-syncthing serve --home /var/lib/organisationos-syncthing --no-browser --no-restart --no-upgrade --no-port-probing
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+UMask=0077
+StateDirectory=organisationos-syncthing
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/organisationos-syncthing
+[Install]
+WantedBy=multi-user.target

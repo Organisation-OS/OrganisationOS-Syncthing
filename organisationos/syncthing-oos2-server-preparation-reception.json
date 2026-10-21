@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "checks": [
+    "no_default_or_personal_folder",
+    "idempotent_no_secret_or_config_change",
+    "distinct_generated_identities",
+    "unsafe_endpoint_refused",
+    "unsafe_endpoint_refused",
+    "unsafe_endpoint_refused",
+    "unsafe_endpoint_refused",
+    "actual_start_preserves_identity_0",
+    "actual_runtime_no_folder_tcp_only_0",
+    "actual_start_preserves_identity_1",
+    "actual_runtime_no_folder_tcp_only_1"
+  ],
+  "binarySha256": "9eaf8cad615cfb07f17af7b87f0e3e77e5a99d902c6f971909bcca4bd3102d6b",
+  "processesStopped": true,
+  "productionInstalled": false,
+  "externalQualification": false
+}
