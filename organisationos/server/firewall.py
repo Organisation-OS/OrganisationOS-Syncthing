@@ -4,7 +4,7 @@
 import json,os,pathlib,subprocess,sys
 TABLE='organisationos_syncthing'
 def main():
- p=pathlib.Path('/etc/organisation/syncthing/firewall.json');s=p.lstat()
+ p=pathlib.Path('/etc/organisationos-syncthing/firewall.json');s=p.lstat()
  if p.is_symlink() or p.resolve()!=p or s.st_uid!=0 or s.st_mode&0o022:raise ValueError()
  v=json.loads(p.read_bytes());known={'10.9.5.18':'10.9.5.74','10.100.8.50':'10.100.8.13'}
  if set(v)!=set(['listenIp','proxyIp']) or known.get(v['listenIp'])!=v['proxyIp']:raise ValueError()

@@ -56,3 +56,12 @@ Les mises à jour du paquet de service vers un inventaire différent sont refus�
 si elles demanderaient d'écraser une configuration ou une unité existante : leur
 migration doit être reçue explicitement. Le rejeu du même paquet et l'activation
 ultérieure de son worker ne régénèrent pas l'identité.
+
+Native service configuration resides in `/etc/organisationos-syncthing`.
+It must not inherit traversal restrictions of the historical Core vault root
+`/etc/organisation`. Release 0.1.1 moves only this service descriptor and its
+unit references; it never broadens Core group membership or vault permissions.
+The migration accepts only the exact initial signed 0.1.0 release, with its
+worker disabled and no employee devices/folders. It verifies and archives exact
+previous units, retains engine identity/state and existing firewall rules, then
+starts the replacement native units. Replays retain the installed identity.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MPL-2.0
 import json,os,pathlib,re,sys
-p=pathlib.Path('/etc/organisation/syncthing/worker.json');s=p.lstat()
+p=pathlib.Path('/etc/organisationos-syncthing/worker.json');s=p.lstat()
 if p.resolve()!=p or s.st_uid!=0 or s.st_mode&0o022:sys.exit('Native worker binding unavailable')
 c=json.loads(p.read_bytes())
 if len(sys.argv)==2 and sys.argv[1]=='--check-module':

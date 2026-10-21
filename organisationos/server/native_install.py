@@ -83,21 +83,38 @@ def main():
   if home.exists():need(home.stat().st_uid==user.pw_uid and stat.S_IMODE(home.stat().st_mode)==0o700)
   generated=json.loads(run(['/usr/sbin/runuser','-u',user.pw_name,'--','/usr/bin/python3',str(release/'prepare-state.py'),'--binary',str(release/'organisationos-syncthing'),'--home',str(home),'--listen','tcp://'+listen+':22000']))
   projection=storage/'projections';directory(projection,0o700,user.pw_uid,user.pw_gid)
-  directory('/etc/organisation/syncthing',0o755)
+  directory('/etc/organisationos-syncthing',0o755)
   descriptor={'schema':1,'instanceId':m['instanceId'],'projectionRoot':str(projection),'engineBinary':str(release/'organisationos-syncthing'),'engineConfig':str(home/'config.xml'),'serverDeviceKey':generated['deviceId'],'publicEndpoint':'tcp://'+hostname+':22000','coreUid':core.pw_uid,'socket':'/run/organisation-syncthing/broker.sock'}
-  write('/etc/organisation/syncthing/service.json',descriptor,0o640,0,user.pw_gid);write('/etc/organisation/syncthing/firewall.json',{'listenIp':listen,'proxyIp':proxy},0o644)
+  write('/etc/organisationos-syncthing/service.json',descriptor,0o640,0,user.pw_gid);write('/etc/organisationos-syncthing/firewall.json',{'listenIp':listen,'proxyIp':proxy},0o644)
   launch={'schema':1,'instanceId':m['instanceId'],'configurationPath':str(config),'adapter':runtime.get('adapter'),'coreMarker':runtime.get('core_marker'),'coreReleases':runtime.get('core_releases'),'corePath':str(P(policy['prefix'])/'active/core'),'moduleBinding':str(config),'moduleRegistry':read(trusted(P('/etc/organisation-module-runtimes')/(digest(str(config).encode())+'.json')))['registry_path']}
-  write('/etc/organisation/syncthing/worker.json',launch,0o644)
+  write('/etc/organisationos-syncthing/worker.json',launch,0o644)
   common='NoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectControlGroups=yes\nCapabilityBoundingSet=\nUMask=0077\n'
   units={
   'organisationos-syncthing-firewall.service':'[Unit]\nDescription=OrganisationOS synchronization proxy boundary\nBefore=organisationos-syncthing.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/python3 '+str(release/'firewall.py')+'\n[Install]\nWantedBy=multi-user.target\n',
   'organisationos-syncthing.service':'[Unit]\nDescription=OrganisationOS Syncthing engine\nAfter=network-online.target organisationos-syncthing-firewall.service\nRequires=organisationos-syncthing-firewall.service\n[Service]\nUser='+user.pw_name+'\nGroup='+user.pw_name+'\nExecCondition=+/usr/bin/python3 '+str(release/'worker-launcher.py')+' --check-module\nExecStart='+str(release/'organisationos-syncthing')+' serve --home '+str(home)+' --no-browser --no-restart --no-upgrade --no-port-probing\nRestart=on-failure\nRestartSec=10\nTimeoutStopSec=60\nMemoryMax=768M\n'+common+'ReadWritePaths='+str(storage)+'\n[Install]\nWantedBy=multi-user.target\n',
   'organisationos-syncthing-broker.socket':'[Unit]\nDescription=OrganisationOS private GED synchronization broker\n[Socket]\nListenStream=/run/organisation-syncthing/broker.sock\nSocketUser='+core.pw_name+'\nSocketGroup='+core.pw_name+'\nSocketMode=0600\nDirectoryMode=0755\nRemoveOnStop=yes\n[Install]\nWantedBy=sockets.target\n',
-  'organisationos-syncthing-broker.service':'[Unit]\nDescription=OrganisationOS restricted local engine adapter\nAfter=organisationos-syncthing.service\nRequires=organisationos-syncthing.service\n[Service]\nUser='+user.pw_name+'\nGroup='+user.pw_name+'\nExecStart=/usr/bin/python3 '+str(release/'broker.py')+' /etc/organisation/syncthing/service.json\nMemoryMax=512M\n'+common+'ReadWritePaths='+str(projection)+'\n',
+  'organisationos-syncthing-broker.service':'[Unit]\nDescription=OrganisationOS restricted local engine adapter\nAfter=organisationos-syncthing.service\nRequires=organisationos-syncthing.service\n[Service]\nUser='+user.pw_name+'\nGroup='+user.pw_name+'\nExecStart=/usr/bin/python3 '+str(release/'broker.py')+' /etc/organisationos-syncthing/service.json\nMemoryMax=512M\n'+common+'ReadWritePaths='+str(projection)+'\n',
   'organisationos-offline-worker.service':'[Unit]\nDescription=OrganisationOS authorized offline projections and GED admission\nAfter=organisationos-syncthing.service\n[Service]\nType=oneshot\nUser='+core.pw_name+'\nGroup='+core.pw_name+'\nExecStart=/usr/bin/python3 '+str(release/'worker-launcher.py')+'\nTimeoutStartSec=240\nMemoryMax=768M\nUMask=0077\nNoNewPrivileges=yes\nPrivateTmp=yes\n',
   'organisationos-offline-worker.timer':'[Unit]\nDescription=OrganisationOS bounded offline reconciliation\n[Timer]\nOnBootSec=90\nOnUnitInactiveSec=60\nAccuracySec=10\nUnit=organisationos-offline-worker.service\n[Install]\nWantedBy=timers.target\n'}
-  for name,content in units.items():write(P('/etc/systemd/system')/name,content.encode())
-  run(['/usr/bin/systemctl','daemon-reload']);run(['/usr/bin/systemctl','enable','--now','organisationos-syncthing-firewall.service','organisationos-syncthing.service','organisationos-syncthing-broker.socket'])
+  migrating=state.get('artifactSha256') not in [None,m['artifact']['sha256']]
+  if migrating:
+   # Only the initial empty, worker-disabled release is eligible for this custody migration.
+   need(state.get('artifactSha256')=='683f7e6e12835327105c6c4a037134a971e06e18e5ef5a028fade2231869eb3e' and not state.get('workerActivated'))
+   import xml.etree.ElementTree as ET
+   priorconfig=ET.parse(home/'config.xml').getroot();need(not priorconfig.findall('folder') and all(d.get('id')==generated['deviceId'] for d in priorconfig.findall('device')))
+   previousRelease='/opt/organisationos-syncthing/releases/'+state['artifactSha256']
+   backups=parent/'initial-unit-custody';directory(backups,0o700)
+   for name,content in units.items():
+    p=P('/etc/systemd/system')/name;old=content.replace(str(release),previousRelease).replace('/etc/organisationos-syncthing','/etc/organisation/syncthing').encode();trusted(p)
+    need(p.read_bytes() in [old,content.encode()]);write(backups/name,old,0o600)
+   run(['/usr/bin/systemctl','stop','organisationos-syncthing-broker.socket','organisationos-syncthing-broker.service','organisationos-syncthing.service'])
+   for name,content in units.items():
+    p=P('/etc/systemd/system')/name;fd,temp=tempfile.mkstemp(prefix='.document-runtime-',dir=p.parent)
+    with os.fdopen(fd,'wb')as f:os.fchmod(f.fileno(),0o644);f.write(content.encode());f.flush();os.fsync(f.fileno())
+    os.replace(temp,p)
+  else:
+   for name,content in units.items():write(P('/etc/systemd/system')/name,content.encode())
+  run(['/usr/bin/systemctl','daemon-reload']);run(['/usr/bin/systemctl','reset-failed','organisationos-syncthing-broker.socket','organisationos-syncthing-broker.service','organisationos-syncthing.service']);run(['/usr/bin/systemctl','enable','--now','organisationos-syncthing-firewall.service','organisationos-syncthing.service','organisationos-syncthing-broker.socket'])
   if m['activateWorker']:run(['/usr/bin/systemctl','enable','--now','organisationos-offline-worker.timer'])
   receipt={'schema':'oos-document-runtime-installation-v1','status':'INSTALLED','instanceId':m['instanceId'],'sequence':m['sequence'],'manifestSha256':manifestSha,'artifactSha256':m['artifact']['sha256'],'engineSha256':PIN,'serverDeviceKey':generated['deviceId'],'listen':'tcp://'+listen+':22000','publicEndpoint':'tcp://'+hostname+':22000','proxySource':proxy,'administration':'127.0.0.1:8384','workerActivated':m['activateWorker'],'employeeDevicesCreated':0,'existingDataPreserved':True}
   write(parent/(manifestSha+'.receipt.json'),receipt,0o600)
