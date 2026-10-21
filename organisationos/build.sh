@@ -17,8 +17,8 @@ go list -m -json all > organisationos-evidence/go-modules.json
 go test -short ./lib/config ./lib/build ./lib/protocol ./lib/scanner ./lib/fs ./lib/model
 for pass in a b; do
   mkdir -p "organisationos-output/$pass"
-  go run build.go -no-upgrade -version v2.1.6-oos.1 -goos linux -goarch amd64 -build-out "organisationos-output/$pass/organisationos-syncthing" build
-  go run build.go -no-upgrade -version v2.1.6-oos.1 -goos windows -goarch amd64 -cc x86_64-w64-mingw32-gcc-posix -build-out "organisationos-output/$pass/organisationos-syncthing.exe" build
+  go run build.go -no-upgrade -version v2.1.6-oos.2 -goos linux -goarch amd64 -build-out "organisationos-output/$pass/organisationos-syncthing" build
+  go run build.go -no-upgrade -version v2.1.6-oos.2 -goos windows -goarch amd64 -cc x86_64-w64-mingw32-gcc-posix -build-out "organisationos-output/$pass/organisationos-syncthing.exe" build
   go clean -cache
  done
 cmp organisationos-output/a/organisationos-syncthing organisationos-output/b/organisationos-syncthing

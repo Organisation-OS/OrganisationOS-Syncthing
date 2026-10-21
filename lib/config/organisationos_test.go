@@ -25,3 +25,36 @@ func TestOrganisationOSPrivateDefaults(t *testing.T) {
 		t.Fatal("port probing changed managed address")
 	}
 }
+
+func TestOrganisationOSLocalEncryptionCannotHideIdentity(t *testing.T) {
+	local := protocol.NewDeviceID([]byte("synthetic-local"))
+	remote := protocol.NewDeviceID([]byte("synthetic-remote"))
+	for _, kind := range []FolderType{FolderTypeSendReceive, FolderTypeSendOnly, FolderTypeReceiveOnly, FolderTypeReceiveEncrypted} {
+		cfg := New(local)
+		cfg.Devices = append(cfg.Devices, DeviceConfiguration{DeviceID: remote, Untrusted: true})
+		cfg.Folders = []FolderConfiguration{{ID: "synthetic", Path: t.TempDir(), Type: kind, Devices: []FolderDeviceConfiguration{
+			{DeviceID: local, EncryptionPassword: "synthetic-invalid-local"},
+			{DeviceID: remote, EncryptionPassword: "synthetic-valid-remote"},
+		}}}
+		if err := cfg.prepare(local); err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.Folders[0].Devices) != 2 {
+			t.Fatal("local and remote identities must remain registered")
+		}
+		for _, device := range cfg.Folders[0].Devices {
+			if device.DeviceID == local && device.EncryptionPassword != "" {
+				t.Fatal("local entry must never carry a recipient password")
+			}
+			if device.DeviceID == remote && device.EncryptionPassword != "synthetic-valid-remote" {
+				t.Fatal("remote encryption must remain unchanged")
+			}
+		}
+		if err := cfg.prepare(local); err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.Folders[0].Devices) != 2 {
+			t.Fatal("normalization must remain idempotent")
+		}
+	}
+}

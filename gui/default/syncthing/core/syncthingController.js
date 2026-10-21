@@ -962,7 +962,7 @@ angular.module('syncthing.core')
                 if (n.deviceID !== $scope.myID) {
                     $scope.currentSharing.shared.push($scope.devices[n.deviceID]);
                 }
-                if (n.encryptionPassword !== '') {
+                if (n.deviceID !== $scope.myID && n.encryptionPassword !== '') {
                     $scope.currentSharing.encryptionPasswords[n.deviceID] = n.encryptionPassword;
                 }
                 $scope.currentSharing.selected[n.deviceID] = true;
@@ -2625,7 +2625,7 @@ angular.module('syncthing.core')
             var newDevices = [];
             folderCfg.devices.forEach(function (dev) {
                 if ($scope.currentSharing.selected[dev.deviceID] === true) {
-                    dev.encryptionPassword = $scope.currentSharing.encryptionPasswords[dev.deviceID];
+                    dev.encryptionPassword = dev.deviceID === $scope.myID ? "" : $scope.currentSharing.encryptionPasswords[dev.deviceID];
                     newDevices.push(dev);
                     delete $scope.currentSharing.selected[dev.deviceID];
                 };
@@ -2634,7 +2634,7 @@ angular.module('syncthing.core')
                 if ($scope.currentSharing.selected[deviceID] === true) {
                     newDevices.push({
                         deviceID: deviceID,
-                        encryptionPassword: $scope.currentSharing.encryptionPasswords[deviceID],
+                        encryptionPassword: deviceID === $scope.myID ? "" : $scope.currentSharing.encryptionPasswords[deviceID],
                     });
                 }
             }

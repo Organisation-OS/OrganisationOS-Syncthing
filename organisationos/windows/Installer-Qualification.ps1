@@ -41,7 +41,25 @@ $xml.SelectSingleNode('/configuration/options/listenAddress').InnerText = "tcp:/
 foreach ($name in @('globalAnnounceEnabled','localAnnounceEnabled','relaysEnabled','natEnabled','crashReportingEnabled')) {
   if ($xml.SelectSingleNode("/configuration/options/$name").InnerText -cne 'false') { throw "Valeur privée attendue absente : $name" }
 }
+# A generated local device must not carry a recipient encryption password.
+$localId = $xml.SelectSingleNode('/configuration/device').GetAttribute('id')
+foreach ($entry in @($xml.SelectNodes('/configuration/defaults/folder/device'))) {
+  $passwordNode = $entry.SelectSingleNode('encryptionPassword')
+  if ($entry.GetAttribute('id') -ceq $localId -and $null -ne $passwordNode -and -not [string]::IsNullOrEmpty($passwordNode.InnerText)) {
+    throw 'Configuration initiale locale inattendue. Aucun moteur demarre.'
+  }
+}
 $xml.Save($configPath)
+# Public identity, binary digest and booleans only; no API key, password or XML copy.
+$initialReceipt = [ordered]@{
+  utc = [DateTime]::UtcNow.ToString('o')
+  deviceId = $localId
+  binarySha256 = $actual
+  generatedLocalEncryptionPasswordEmpty = $true
+  personalFolderConfigured = $false
+  engineStarted = $false
+}
+$initialReceipt | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'installation-receipt.json') -Encoding UTF8
 [IO.File]::WriteAllText((Join-Path $synthetic 'qualification.txt'), "Fichier synthetique OrganisationOS. Aucun document personnel.`r`n")
 $launch = '@echo off' + "`r`n" + 'cd /d "%~dp0"' + "`r`n" + 'organisationos-syncthing.exe serve --home "%~dp0Etat" --no-browser --no-restart --no-upgrade --no-port-probing' + "`r`n" + 'pause' + "`r`n"
 [IO.File]::WriteAllText((Join-Path $target 'Demarrer.cmd'), $launch, [Text.Encoding]::ASCII)

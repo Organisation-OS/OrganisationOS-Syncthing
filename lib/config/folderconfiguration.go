@@ -285,6 +285,14 @@ func (f *FolderConfiguration) prepare(myID protocol.DeviceID, existingDevices ma
 	f.Devices = ensureExistingDevices(f.Devices, existingDevices)
 	f.Devices = ensureNoDuplicateFolderDevices(f.Devices)
 	f.Devices = ensureDevicePresent(f.Devices, myID)
+	// OrganisationOS: encryption passwords describe remote untrusted recipients.
+	// A password on our own entry makes generateClusterConfig omit our identity.
+	// Normalize only the local entry; preserve every remote recipient's password.
+	for i := range f.Devices {
+		if myID != protocol.EmptyDeviceID && f.Devices[i].DeviceID == myID {
+			f.Devices[i].EncryptionPassword = ""
+		}
+	}
 	f.Devices = ensureNoUntrustedTrustingSharing(f, f.Devices, existingDevices)
 
 	slices.SortFunc(f.Devices, func(a, b FolderDeviceConfiguration) int {

@@ -1,5 +1,5 @@
 OrganisationOS Syncthing — client portable de qualification 0.1.0
-Moteur : v2.1.6-oos.1, fork OrganisationOS du projet Syncthing.
+Moteur : version exacte et empreinte dans provenance.json, fork OrganisationOS du projet Syncthing.
 
 Ce paquet prépare un essai Windows, pas une connexion GED déjà configurée.
 Le moteur, notre intégration GED et cet installateur ont des réceptions distinctes.
