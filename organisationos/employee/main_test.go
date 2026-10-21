@@ -11,7 +11,9 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,14 +22,14 @@ import (
 )
 
 func fixtureConfig() Config {
-	return Config{1, "27c0be38-60bd-4dce-bb28-ef0088716a25", "https://portal.thecgp.com", "TheCGP", "KMYJWX3-EJ6OKF7-Z4TIBZI-EMYAEMW-3OCR7BB-2Z2OM54-SJMJ2KI-SKQXAQR", "tcp://syncthing.thecgp.com:22000"}
+	return Config{2, "27c0be38-60bd-4dce-bb28-ef0088716a25", "https://portal.thecgp.com", "https://portal.thecgp.com", "TheCGP", "KMYJWX3-EJ6OKF7-Z4TIBZI-EMYAEMW-3OCR7BB-2Z2OM54-SJMJ2KI-SKQXAQR", "tcp://syncthing.thecgp.com:22000"}
 }
 func TestInstanceBoundary(t *testing.T) {
 	c := fixtureConfig()
 	if validate(c) != nil {
 		t.Fatal("valid instance")
 	}
-	for _, mutate := range []func(*Config){func(c *Config) { c.Portal = "https://foreign.example" }, func(c *Config) { c.Address = "tcp://syncthing.villesadp.ca:22000" }, func(c *Config) { c.Instance = "b7a1f6b1-c4aa-4de7-95fb-29d509d3398d" }, func(c *Config) { c.Server = "invalid" }} {
+	for _, mutate := range []func(*Config){func(c *Config) { c.Portal = "https://foreign.example" }, func(c *Config) { c.Address = "tcp://syncthing.villesadp.ca:22000" }, func(c *Config) { c.Instance = "b7a1f6b1-c4aa-4de7-95fb-29d509d3398d" }, func(c *Config) { c.Server = "invalid" }, func(c *Config) { c.API = "https://api.villesadp.ca" }} {
 		bad := c
 		mutate(&bad)
 		if validate(bad) == nil {
@@ -121,5 +123,33 @@ func TestAtomicWriteRejectsSymlink(t *testing.T) {
 	b, _ := os.ReadFile(target)
 	if string(b) != "retained" {
 		t.Fatal("original changed")
+	}
+}
+
+type captureTransport func(*http.Request) (*http.Response, error)
+
+func (f captureTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func TestSplitApiTransport(t *testing.T) {
+	c := Config{2, "b7a1f6b1-c4aa-4de7-95fb-29d509d3398d", "https://portal.villesadp.ca", "https://api.villesadp.ca", "Ville", fixtureConfig().Server, "tcp://syncthing.villesadp.ca:22000"}
+	if validate(c) != nil {
+		t.Fatal("split native origins refused")
+	}
+	old := client
+	defer func() { client = old }()
+	called := false
+	client = &http.Client{Transport: captureTransport(func(r *http.Request) (*http.Response, error) {
+		called = true
+		if r.URL.String() != "https://api.villesadp.ca/api/v1/documents/offline/devices/test/configuration" {
+			t.Fatal("request used Portal instead of native API")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"data":{"ok":true}}`)), Header: make(http.Header)}, nil
+	})}
+	var out map[string]bool
+	if e := portal(c, "GET", "/api/v1/documents/offline/devices/test/configuration", nil, nil, &out); e != nil || !called || !out["ok"] {
+		t.Fatal("split API request failed")
+	}
+	c.API = c.Portal
+	if validate(c) == nil {
+		t.Fatal("Ville Portal cannot replace API")
 	}
 }

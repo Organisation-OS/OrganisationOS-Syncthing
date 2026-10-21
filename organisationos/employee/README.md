@@ -1,4 +1,4 @@
-# Installateur employé OrganisationOS — candidat 0.3.0
+# Installateur employé OrganisationOS — candidat 0.3.1
 
 Ce programme Go est l'installateur et l'accompagnateur du moteur, pas un nouveau
 moteur Syncthing. Il embarque exactement le Windows amd64 v2.1.6-oos.2 reçu,
@@ -41,3 +41,8 @@ qualification jusqu'à réception du profil Windows propre : installation,
 protocole local, authentification, autostart, réinstallation et reprise réelle.
 Les tests Linux du protocole et la génération d'un PE AMD64 ne remplacent pas
 cette réception. Aucun essai sur le poste utilisateur n'a été lancé cette nuit.
+
+La configuration schema2 distingue portalOrigin (connexion navigateur) et apiOrigin
+(requêtes signées). Ville utilise son domaine API natif distinct. Une réinstallation
+peut compléter la seule origine API d’un ancien profil schema1 dont tous les autres
+champs correspondent exactement; identité, enrôlement et fichiers restent intacts.

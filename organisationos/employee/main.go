@@ -34,7 +34,7 @@ import (
 
 var errRunning = errors.New("employee helper already running")
 
-const version = "0.3.0-candidate.1"
+const version = "0.3.1-candidate.1"
 const engineSHA = "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
 
 //go:embed assets/engine.bin
@@ -46,6 +46,7 @@ type Config struct {
 	Schema   int    `json:"schema"`
 	Instance string `json:"instanceId"`
 	Portal   string `json:"portalOrigin"`
+	API      string `json:"apiOrigin"`
 	Name     string `json:"organisationName"`
 	Server   string `json:"serverDeviceKey"`
 	Address  string `json:"publicEndpoint"`
@@ -135,9 +136,9 @@ func loadJSON(path string, v any) error {
 	return json.Unmarshal(b, v)
 }
 func validate(c Config) error {
-	known := map[string][2]string{"27c0be38-60bd-4dce-bb28-ef0088716a25": {"https://portal.thecgp.com", "tcp://syncthing.thecgp.com:22000"}, "b7a1f6b1-c4aa-4de7-95fb-29d509d3398d": {"https://portal.villesadp.ca", "tcp://syncthing.villesadp.ca:22000"}}
+	known := map[string][3]string{"27c0be38-60bd-4dce-bb28-ef0088716a25": {"https://portal.thecgp.com", "tcp://syncthing.thecgp.com:22000", "https://portal.thecgp.com"}, "b7a1f6b1-c4aa-4de7-95fb-29d509d3398d": {"https://portal.villesadp.ca", "tcp://syncthing.villesadp.ca:22000", "https://api.villesadp.ca"}}
 	p, ok := known[c.Instance]
-	if !ok || c.Schema != 1 || c.Portal != p[0] || c.Address != p[1] || !keyPattern.MatchString(c.Server) || c.Name == "" || len(c.Name) > 120 {
+	if !ok || c.Schema != 2 || c.API != p[2] || c.Portal != p[0] || c.Address != p[1] || !keyPattern.MatchString(c.Server) || c.Name == "" || len(c.Name) > 120 {
 		return errors.New("organisation configuration refused")
 	}
 	return nil
@@ -301,7 +302,7 @@ func portal(c Config, method, path string, body any, p map[string]any, out any) 
 			return e
 		}
 	}
-	req, e := http.NewRequest(method, c.Portal+path, bytes.NewReader(data))
+	req, e := http.NewRequest(method, c.API+path, bytes.NewReader(data))
 	if e != nil {
 		return e
 	}
@@ -639,8 +640,14 @@ func install(configFile string) error {
 	}
 	existing := filepath.Join(home(c), "organisation.json")
 	if _, e := os.Stat(existing); e == nil {
-		old, e := getConfig(c.Instance)
-		if e != nil || old != c {
+		var old Config
+		e := loadJSON(existing, &old)
+		// Explicit configuration-only upgrade; preserve identity, enrollment, files and conflicts.
+		if e == nil && old.Schema == 1 && old.API == "" {
+			old.Schema = 2
+			old.API = c.API
+		}
+		if e != nil || validate(old) != nil || old != c {
 			return errors.New("existing organisation configuration differs; retained unchanged")
 		}
 	} else if !os.IsNotExist(e) {
