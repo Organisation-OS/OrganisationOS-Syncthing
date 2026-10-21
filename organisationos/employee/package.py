@@ -7,7 +7,8 @@ ROOT=Path(__file__).resolve().parents[2];HERE=Path(__file__).resolve().parent
 sha=lambda b:hashlib.sha256(b).hexdigest()
 def package(config,output):
  names={'27c0be38-60bd-4dce-bb28-ef0088716a25':('TheCGP','https://portal.thecgp.com','tcp://syncthing.thecgp.com:22000'),'b7a1f6b1-c4aa-4de7-95fb-29d509d3398d':('Ville','https://portal.villesadp.ca','tcp://syncthing.villesadp.ca:22000')}
- c=json.loads(Path(config).read_bytes());label,origin,endpoint=names[c['instanceId']];assert c['schema']==1 and c['portalOrigin']==origin and c['publicEndpoint']==endpoint
+ c=json.loads(Path(config).read_bytes());label,origin,endpoint=names[c['instanceId']];assert c['schema']==1 and c['portalOrigin']==origin and c['publicEndpoint']==endpoint and c['organisationName']==label
+ assert Path(output).name=='OrganisationOS-Syncthing-'+label+'-0.3.0-candidate.1-windows-x64.zip'
  exe=(HERE/'output/OrganisationOS-Syncthing-Installer.exe').read_bytes();assert sha(exe)=='028c58d3e3f32599e592a6ce984b311ddb3ef5a9054dd0d9090caca078a0c25f'
  with zipfile.ZipFile(ROOT/'organisationos-output/OrganisationOS-Syncthing-Qualification-0.2.0-windows-x64.zip')as old:
   files={n:old.read(n) for n in old.namelist()if n.startswith('notices/') or n in ['LICENSE.txt','AUTHORS.txt','source-moteur.zip']}
