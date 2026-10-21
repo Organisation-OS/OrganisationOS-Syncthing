@@ -21,3 +21,5 @@ deb
 
 /organisationos-output/
 /organisationos-evidence/
+
+__pycache__/
