@@ -72,7 +72,7 @@ def worker_environment(runtime,config):
 
 def admit_sequence(state,m,envelope,superseded,public):
  manifestSha=digest(canonical(envelope))
- if m['sequence']==state['sequence'] and state.get('manifestSha256')==manifestSha:return []
+ if m['sequence']==state['sequence'] and state.get('manifestSha256')==manifestSha:return state.get('supersededWithoutInstallation',[])
  if m['sequence']==state['sequence']+1:return []
  # One CP-signed candidate may have failed before adoption. Preserve it explicitly;
  # never manufacture an installation receipt or silently relax monotonic sequencing.

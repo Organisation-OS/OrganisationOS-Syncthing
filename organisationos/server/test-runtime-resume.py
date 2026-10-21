@@ -38,6 +38,9 @@ def signed(payload):
  e={'schema':'oos-signed-v1','purpose':native.PURPOSE,'algorithm':'Ed25519','issuer':native.digest(pub),'payload':payload};e['signature']=base64.b64encode(key.sign(native.canonical(e))).decode();return e
 old=copy.deepcopy(m);old['sequence']=5;new=copy.deepcopy(m);new['sequence']=6;state={'sequence':4,'artifactSha256':'c39eac51f1da66fb283a0017d3e70a3f4308cbb4a7f9dd5b7ef531910301a2f0'}
 assert native.admit_sequence(state,new,signed(new),signed(old),pub)[0]['status']=='SUPERSEDED_WITHOUT_INSTALLATION';checks.append('verified adjacent signed supersession retains failed candidate without declaring installation')
+accepted=native.admit_sequence(state,new,signed(new),signed(old),pub)
+replay={**state,'sequence':6,'manifestSha256':native.digest(native.canonical(signed(new))),'supersededWithoutInstallation':accepted}
+assert native.admit_sequence(replay,new,signed(new),None,pub)==accepted;checks.append('same manifest replay preserves supersession receipt exactly')
 for bad in [None,{**signed(old),'signature':base64.b64encode(b'0'*64).decode()},signed({**old,'sequence':4}),signed({**old,'installationId':'b7a1f6b1-c4aa-4de7-95fb-29d509d3398d','instanceId':'b7a1f6b1-c4aa-4de7-95fb-29d509d3398d'})]:
  try:native.admit_sequence(state,new,signed(new),bad,pub)
  except Exception:checks.append('unsigned nonadjacent or cross-instance supersession refused')
