@@ -11,7 +11,7 @@ def package(config,output):
  assert c['apiOrigin']=={'TheCGP':'https://portal.thecgp.com','Ville':'https://api.villesadp.ca'}[label]
  assert Path(output).name=='OrganisationOS-Syncthing-'+label+'-0.3.1-candidate.1-windows-x64.zip'
  exe=(HERE/'output-0.3.1/OrganisationOS-Syncthing-Installer.exe').read_bytes();assert sha(exe)=='48e6af2d6dbd252ee4fad9a63672e6d85dfebc976e7f2276d9056b17c9c7a908'
- with zipfile.ZipFile(ROOT/'organisationos-output-0.3.1/OrganisationOS-Syncthing-Qualification-0.2.0-windows-x64.zip')as old:
+ with zipfile.ZipFile(ROOT/'organisationos-output/OrganisationOS-Syncthing-Qualification-0.2.0-windows-x64.zip')as old:
   files={n:old.read(n) for n in old.namelist()if n.startswith('notices/') or n in ['LICENSE.txt','AUTHORS.txt','source-moteur.zip']}
  files['LICENSE-Go.txt']=(HERE/'LICENSE-Go.txt').read_bytes();files['OrganisationOS-Syncthing-Installer.exe']=exe;files['organisation.json']=json.dumps(c,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
  files['source-installateur.zip']=subprocess.check_output(['git','archive','--format=zip','afeb1c6067e986cb019e303230a7a89057b39bca','organisationos/employee'],cwd=ROOT)
