@@ -34,7 +34,7 @@ import (
 
 var errRunning = errors.New("employee helper already running")
 
-const version = "0.3.1-candidate.1"
+const version = "0.3.2-candidate.1"
 const engineSHA = "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
 
 //go:embed assets/engine.bin
@@ -314,23 +314,26 @@ func portal(c Config, method, path string, body any, p map[string]any, out any) 
 	}
 	r, e := client.Do(req)
 	if e != nil {
-		return errors.New("organisation unavailable")
+		return transportFailure(e)
 	}
 	defer r.Body.Close()
 	if r.StatusCode != 200 {
-		return errors.New("organisation access refused or temporarily unavailable")
+		return &requestError{Kind: "HTTP_REFUSED", Status: r.StatusCode}
 	}
 	raw, e := io.ReadAll(io.LimitReader(r.Body, 2097153))
 	if e != nil || len(raw) > 2097152 {
-		return errors.New("organisation response refused")
+		return &requestError{Kind: "RESPONSE_BOUNDS"}
 	}
 	var wrapper struct {
 		Data json.RawMessage `json:"data"`
 	}
 	if e = json.Unmarshal(raw, &wrapper); e != nil {
-		return e
+		return &requestError{Kind: "RESPONSE_JSON"}
 	}
-	return json.Unmarshal(wrapper.Data, out)
+	if e = json.Unmarshal(wrapper.Data, out); e != nil {
+		return &requestError{Kind: "RESPONSE_DATA"}
+	}
+	return nil
 }
 func local(c Config, method, path string, body any, out any) error {
 	raw, e := os.ReadFile(filepath.Join(home(c), "Etat", "config.xml"))
@@ -400,21 +403,21 @@ func begin(c Config) error {
 }
 func callback(raw string) error {
 	u, e := url.Parse(raw)
-	if e != nil || u.Scheme != "organisationos-syncthing" || u.Host != "enrollment" || u.Path != "" || u.Fragment != "" {
-		return errors.New("enrollment callback refused")
+	if e != nil || u.Scheme != "organisationos-syncthing" || u.Host != "enrollment" || u.Path != "" || u.Fragment != "" || u.User != nil || u.Opaque != "" {
+		return operationFailure("RETURN_URI", "INVALID_RETURN", nil)
 	}
 	q := u.Query()
 	for k, v := range q {
 		if len(v) != 1 || (k != "state" && k != "code" && k != "deviceId") {
-			return errors.New("enrollment callback refused")
+			return operationFailure("RETURN_URI", "INVALID_RETURN", nil)
 		}
 	}
 	if !uuidPattern.MatchString(q.Get("deviceId")) {
-		return errors.New("device record refused")
+		return operationFailure("RETURN_RECORD", "INVALID_RECORD", nil)
 	}
 	entries, e := os.ReadDir(filepath.Join(base(), "Organisations"))
 	if e != nil {
-		return e
+		return operationFailure("LOCAL_CONFIGURATION", "ORGANISATIONS_UNAVAILABLE", e)
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -429,24 +432,24 @@ func callback(raw string) error {
 			continue
 		}
 		if pending.Expires < time.Now().Unix() {
-			return errors.New("enrollment expired; reconnect from application")
+			return operationFailure("LOCAL_PENDING", "PENDING_EXPIRED", nil)
 		}
 		id, e := readIdentity(c)
 		if e != nil || id != pending.Identity {
-			return errors.New("device identity changed")
+			return operationFailure("LOCAL_IDENTITY", "IDENTITY_MISMATCH", nil)
 		}
 		record := q.Get("deviceId")
 		path := "/api/v1/documents/offline/devices/" + record + "/exchange"
 		var configuration Configuration
 		if code := q.Get("code"); code != "" {
 			if !regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`).MatchString(code) {
-				return errors.New("enrollment code refused")
+				return operationFailure("RETURN_CODE", "INVALID_CODE", nil)
 			}
 			body := map[string]any{"code": code, "verifier": pending.Verifier}
 			canonical, _ := json.Marshal(body)
 			p, e := proof(c, record, "POST", path, canonical)
 			if e != nil {
-				return e
+				return operationFailure("DEVICE_PROOF", "PROOF_UNAVAILABLE", e)
 			}
 			body["proof"] = p
 			if e = portal(c, "POST", path, body, nil, &configuration); e != nil {
@@ -454,32 +457,40 @@ func callback(raw string) error {
 				path = "/api/v1/documents/offline/devices/" + record + "/configuration"
 				retryProof, proofErr := proof(c, record, "GET", path, nil)
 				if proofErr != nil {
-					return proofErr
+					return operationFailure("RECOVERY_PROOF", "PROOF_UNAVAILABLE", proofErr)
 				}
 				if retryErr := portal(c, "GET", path, nil, retryProof, &configuration); retryErr != nil {
-					return retryErr
+					failure := operationFailure("EXCHANGE_RECOVERY", "EXCHANGE_AND_RECOVERY_FAILED", retryErr)
+					var first *requestError
+					if errors.As(e, &first) {
+						failure.PriorHTTPStatus = first.Status
+					}
+					return failure
 				}
 			}
 		} else {
 			path = "/api/v1/documents/offline/devices/" + record + "/configuration"
 			p, e := proof(c, record, "GET", path, nil)
 			if e != nil {
-				return e
+				return operationFailure("DEVICE_PROOF", "PROOF_UNAVAILABLE", e)
 			}
 			if e = portal(c, "GET", path, nil, p, &configuration); e != nil {
-				return e
+				return operationFailure("CONFIGURATION", "CONFIGURATION_UNAVAILABLE", e)
 			}
 		}
 		if e = validateResponse(c, record, configuration); e != nil {
-			return e
+			return operationFailure("SERVER_SCOPE", "SERVER_OR_SCOPE_MISMATCH", e)
 		}
 		if e = writeJSON(filepath.Join(home(c), "enrollment.json"), State{record, id}); e != nil {
-			return e
+			return operationFailure("LOCAL_FINALIZATION", "STATE_WRITE_FAILED", e)
 		}
 		os.Remove(filepath.Join(home(c), "pending.json"))
-		return browser(c.Portal + "/documents/offline")
+		if e = openBrowser(c.Portal + "/documents/offline"); e != nil {
+			return operationFailure("FINAL_BROWSER", "ENROLLED_BROWSER_UNAVAILABLE", e)
+		}
+		return nil
 	}
-	return errors.New("no pending local enrollment matches this callback")
+	return operationFailure("LOCAL_PENDING", "NO_MATCHING_PENDING", nil)
 }
 func validateResponse(c Config, record string, r Configuration) error {
 	if r.Status != "ACTIVE" || r.Device != record || r.Server.Key != c.Server || r.Server.Address != c.Address || len(r.Folders) > 32 {
@@ -714,6 +725,9 @@ func main() {
 		if err == nil {
 			err = begin(c)
 		}
+	} else if len(args) == 1 && args[0] == "--diagnose" {
+		diagnose()
+		return
 	} else if len(args) == 1 && args[0] == "--version" {
 		fmt.Println(version)
 		return
@@ -725,13 +739,13 @@ func main() {
 			err = install(filepath.Join(filepath.Dir(exe), "organisation.json"))
 		}
 	} else {
-		err = errors.New("invalid invocation")
+		err = operationFailure("INVOCATION", "INVALID_ARGUMENTS", nil)
 	}
 	if errors.Is(err, errRunning) {
 		return
 	}
 	if err != nil {
-		notify("Syncthing OrganisationOS", "L’opération n’a pas pu être terminée. Les identités, fichiers et conflits existants sont conservés. Reprenez la connexion depuis l’application ou contactez votre administrateur.")
+		reportFailure(err)
 		os.Exit(1)
 	}
 }

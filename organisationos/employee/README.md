@@ -1,4 +1,4 @@
-# Installateur employé OrganisationOS — candidat 0.3.1
+# Installateur employé OrganisationOS — candidat 0.3.2
 
 Ce programme Go est l'installateur et l'accompagnateur du moteur, pas un nouveau
 moteur Syncthing. Il embarque exactement le Windows amd64 v2.1.6-oos.2 reçu,
@@ -36,8 +36,8 @@ Aucune dépendance Go externe supplémentaire. Les deux compilations comparées
 partagent ici le cache ; ce contrôle ne prétend pas être deux builds indépendants.
 
 La signature Authenticode est absente. Le manifeste du catalogue est signé
-séparément par le Control Plane. Le paquet doit rester dans l'audience de
-qualification jusqu'à réception du profil Windows propre : installation,
+séparément par le Control Plane. Ville est disponible à tous ses usagers authentifiés sur autorisation explicite
+du 21 octobre ; TheCGP conserve son audience de qualification. Restent à recevoir : installation,
 protocole local, authentification, autostart, réinstallation et reprise réelle.
 Les tests Linux du protocole et la génération d'un PE AMD64 ne remplacent pas
 cette réception. Aucun essai sur le poste utilisateur n'a été lancé cette nuit.
@@ -46,3 +46,21 @@ La configuration schema2 distingue portalOrigin (connexion navigateur) et apiOri
 (requêtes signées). Ville utilise son domaine API natif distinct. Une réinstallation
 peut compléter la seule origine API d’un ancien profil schema1 dont tous les autres
 champs correspondent exactement; identité, enrôlement et fichiers restent intacts.
+
+## Diagnostic de la réception Windows du 21 octobre
+
+La 0.3.1 affichait une erreur générique sans conserver son étape ni le statut HTTP.
+La 0.3.2 journalise exclusivement des références aléatoires, codes fermés, version,
+heure UTC et statuts HTTP dans `%LOCALAPPDATA%\OrganisationOS\Syncthing\diagnostic.json`.
+Aucune URI, ligne de commande, identité personnelle, valeur d’erreur brute, code,
+verifier, certificat ou jeton n’est journalisé. `--diagnose` vérifie en lecture seule
+le certificat local et le refus HTTP401 attendu de l’API sans authentification.
+Cette commande ne consomme aucun code, ne change aucune configuration et n’enrôle pas.
+
+La reprise se fait par le raccourci Syncthing existant du menu Démarrer, avec le même
+certificat. Le serveur réutilise son enregistrement pour la même identité et le même
+utilisateur, sans copie des sessions de qualification. L’installation conserve les
+anciennes releases, les fichiers, la configuration et les conflits.
+
+La cause initiale sur SADP251218M n’est pas encore établie. La nouvelle instrumentation
+permet de la préciser ; elle n’est pas présentée comme une réception Windows réussie.
