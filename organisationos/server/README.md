@@ -26,3 +26,33 @@ les projections par utilisateur/appareil et le retour VersionAdmission ne sont
 pas remplacés par une configuration manuelle du moteur. Ils demeurent nécessaires
 avant une distribution employé générale; le ZIP actuel est de qualification.
 Une révocation bloque l'avenir sans effacer les copies déjà reçues.
+
+## Livraison native des services
+
+`cp_runtime_publish.py` utilise l'identité de service du Control Plane, son
+contrôle releases, son signataire Ed25519 et son audit. Le CP construit l'archive
+reproductible depuis les entrées reçues ; la publication est privée et liée à
+une installation. La finalité `organisation-document-runtime-v1` est distincte
+des paquets employés. `native_install.py` vérifie cette signature avec la clé du
+superviseur natif et refuse les instances, séquences, binaires ou inventaires
+inattendus. Le code installé vient de cette archive ; aucun secret n'y figure.
+
+Une identité serveur est générée une seule fois dans son compte système privé.
+Le socket systemd appartient au seul UID Core ; le broker ne rejoint pas le
+groupe du coffre. Le pare-feu ne gère que sa propre table et n'accepte le port
+TCP 22000 qu'à travers le proxy propre à l'instance. L'administration reste
+127.0.0.1:8384. Une première livraison démarre moteur/broker et laisse le worker
+arrêté. Son activation requiert ensuite une livraison signée explicite et le
+Core/module Documents natifs reçus. Les reçus d'installation, les écoutes et les
+essais de réseau sont distincts de la validation des sources.
+
+Le worker entre dans ModuleMaintenance avant toute composition SQL. L'Agent
+1.24 draine ce worker avant mise à jour/restauration, garde son intention de
+reprise et ne rejoue pas un traitement oneshot déjà terminé. Le retrait Documents
+arrête également le transport ; une condition systemd vérifie la présence du
+module au démarrage. Les fichiers, identités et conflits sont conservés.
+
+Les mises à jour du paquet de service vers un inventaire différent sont refusées
+si elles demanderaient d'écraser une configuration ou une unité existante : leur
+migration doit être reçue explicitement. Le rejeu du même paquet et l'activation
+ultérieure de son worker ne régénèrent pas l'identité.

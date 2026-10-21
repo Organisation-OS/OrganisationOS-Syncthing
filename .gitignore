@@ -23,3 +23,6 @@ deb
 /organisationos-evidence/
 
 __pycache__/
+
+/organisationos/employee/assets/engine.bin
+/organisationos/employee/output/

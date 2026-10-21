@@ -1,0 +1,23 @@
+{
+  "schema": "oos-offline-employee-helper-build-v1",
+  "version": "0.3.0-candidate.1",
+  "architecture": "windows-amd64",
+  "helperSha256": "028c58d3e3f32599e592a6ce984b311ddb3ef5a9054dd0d9090caca078a0c25f",
+  "helperSize": 37287424,
+  "engineVersion": "v2.1.6-oos.2",
+  "engineCommit": "e80f807467f5e127f35e2de45cfd22d4091bcd42",
+  "engineSha256": "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b",
+  "builderImage": "sha256:f4723252fe7167ef67cb0bd6a952dce9c78153b3a1d4ae87f523c01f4dd9d0b1",
+  "linuxTests": [
+    "TestInstanceBoundary",
+    "TestEmbeddedQualifiedEngine",
+    "TestResponsePinsAndFolders",
+    "TestEd25519ProofBoundToRequest",
+    "TestAtomicWriteRejectsSymlink"
+  ],
+  "twoOutputsIdentical": true,
+  "comparisonScope": "same cached builder invocation",
+  "windowsAuthenticode": "UNSIGNED",
+  "windowsExecution": "NOT_RUN",
+  "distribution": "NOT_YET_PUBLISHED"
+}
