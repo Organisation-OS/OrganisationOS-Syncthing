@@ -62,6 +62,10 @@ type diagnosticReceipt struct {
 }
 
 func persistDiagnostic(err error) diagnosticReceipt {
+	r, _ := persistDiagnosticFile(err, "diagnostic.json")
+	return r
+}
+func persistDiagnosticFile(err error, name string) (diagnosticReceipt, error) {
 	op := &operationError{Stage: "APPLICATION", Code: "OPERATION_FAILED"}
 	var reported *operationError
 	if errors.As(err, &reported) {
@@ -72,13 +76,25 @@ func persistDiagnostic(err error) diagnosticReceipt {
 		ref = "unavailable"
 	}
 	r := diagnosticReceipt{"oos-employee-diagnostic-v1", "OOS-ST-" + ref, time.Now().UTC().Format(time.RFC3339), version, op.Stage, op.Code, op.Transport, op.HTTPStatus, op.PriorHTTPStatus}
-	if os.Getenv("LOCALAPPDATA") != "" {
-		if os.MkdirAll(base(), 0700) == nil {
-			_ = writeJSON(filepath.Join(base(), "diagnostic.json"), r)
-		}
+	if os.Getenv("LOCALAPPDATA") == "" {
+		return r, errors.New("local directory unavailable")
 	}
-	return r
+	if err := os.MkdirAll(base(), 0700); err != nil {
+		return r, err
+	}
+	return r, writeJSON(filepath.Join(base(), name), r)
 }
+func reportReadOnly(err error) {
+	r, writeErr := persistDiagnosticFile(err, "diagnostic-readonly.json")
+	message := "Diagnostic en lecture seule — " + r.HelperVersion + "\nHeure UTC : " + r.At + "\nRéférence : " + r.Reference + "\nÉtape : " + r.Stage + " · " + r.Code + "\nAucun enrôlement ni réglage modifié."
+	if writeErr != nil {
+		message += "\nÉcriture du nouveau diagnostic impossible. Tout fichier précédent est obsolète ; transmettez uniquement cette référence, cette heure et cette étape."
+	} else {
+		message += "\nRésultat de ce lancement : %LOCALAPPDATA%\\OrganisationOS\\Syncthing\\diagnostic-readonly.json."
+	}
+	notify("Syncthing OrganisationOS — diagnostic en lecture seule", message)
+}
+
 func reportFailure(err error) {
 	r := persistDiagnostic(err)
 	message := "Connexion non terminée. Votre identité, vos fichiers et vos conflits sont conservés.\nRéférence : " + r.Reference + "\nÉtape : " + r.Stage + " · " + r.Code
@@ -97,7 +113,7 @@ func reportFailure(err error) {
 func diagnose() {
 	entries, err := os.ReadDir(filepath.Join(base(), "Organisations"))
 	if err != nil {
-		reportFailure(operationFailure("LOCAL_CONFIGURATION", "ORGANISATIONS_UNAVAILABLE", err))
+		reportReadOnly(operationFailure("LOCAL_CONFIGURATION", "ORGANISATIONS_UNAVAILABLE", err))
 		return
 	}
 	count := 0
@@ -112,21 +128,20 @@ func diagnose() {
 		count++
 		record := "11111111-1111-4111-8111-111111111111"
 		if _, e = proof(c, record, "GET", "/api/v1/documents/offline/devices/"+record+"/configuration", nil); e != nil {
-			reportFailure(operationFailure("DEVICE_PROOF", "PROOF_UNAVAILABLE", e))
+			reportReadOnly(operationFailure("DEVICE_PROOF", "PROOF_UNAVAILABLE", e))
 			return
 		}
 		var out any
 		e = portal(c, "GET", "/api/v1/documents/offline/devices", nil, nil, &out)
 		var status *requestError
 		if !errors.As(e, &status) || status.Status != 401 {
-			reportFailure(operationFailure("API_REACHABILITY", "EXPECTED_AUTHENTICATION_REFUSAL_NOT_OBSERVED", e))
+			reportReadOnly(operationFailure("API_REACHABILITY", "EXPECTED_AUTHENTICATION_REFUSAL_NOT_OBSERVED", e))
 			return
 		}
 	}
 	if count == 0 {
-		reportFailure(operationFailure("LOCAL_CONFIGURATION", "NO_VALID_ORGANISATION", nil))
+		reportReadOnly(operationFailure("LOCAL_CONFIGURATION", "NO_VALID_ORGANISATION", nil))
 		return
 	}
-	r := persistDiagnostic(operationFailure("READ_ONLY_DIAGNOSTIC", "LOCAL_PROOF_AND_API_REACHABLE", nil))
-	notify("Syncthing OrganisationOS", "Diagnostic en lecture seule terminé : certificat local utilisable et API accessible. Aucun enrôlement ni réglage modifié.\nRéférence : "+r.Reference+"\nLe diagnostic expurgé se trouve dans %LOCALAPPDATA%\\OrganisationOS\\Syncthing\\diagnostic.json.")
+	reportReadOnly(operationFailure("READ_ONLY_DIAGNOSTIC", "LOCAL_PROOF_AND_API_REACHABLE", nil))
 }

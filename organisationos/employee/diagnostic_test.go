@@ -98,6 +98,48 @@ func TestCallbackFinalizationKeepsIdentity(t *testing.T) {
 		t.Fatal("pending not retired")
 	}
 }
+func TestWindowsRootCallbackFinalizationKeepsIdentity(t *testing.T) {
+	c, record, raw := callbackFixture(t)
+	raw = strings.Replace(raw, "enrollment?", "enrollment/?", 1)
+	old := client
+	oldBrowser := openBrowser
+	defer func() { client = old; openBrowser = oldBrowser }()
+	before, _ := os.ReadFile(filepath.Join(home(c), "Etat", "cert.pem"))
+	requests := 0
+	client = &http.Client{Transport: captureTransport(func(r *http.Request) (*http.Response, error) {
+		requests++
+		if r.Method != "POST" || r.URL.Host != "portal.thecgp.com" || !strings.HasSuffix(r.URL.Path, "/exchange") {
+			t.Fatal("wrong route")
+		}
+		var body map[string]json.RawMessage
+		json.NewDecoder(r.Body).Decode(&body)
+		if len(body) != 3 || body["proof"] == nil || body["verifier"] == nil || body["code"] == nil {
+			t.Fatal("closed exchange shape")
+		}
+		data, _ := json.Marshal(map[string]any{"data": Configuration{"ACTIVE", record, Server{c.Server, c.Address}, []Folder{}}})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(data))), Header: make(http.Header)}, nil
+	})}
+	openBrowser = func(u string) error {
+		if u != c.Portal+"/documents/offline" {
+			t.Fatal("foreign browser")
+		}
+		return nil
+	}
+	if e := callback(raw); e != nil {
+		t.Fatal(e)
+	}
+	var s State
+	if loadJSON(filepath.Join(home(c), "enrollment.json"), &s) != nil || s.Device != record {
+		t.Fatal("final state absent")
+	}
+	after, _ := os.ReadFile(filepath.Join(home(c), "Etat", "cert.pem"))
+	if string(before) != string(after) || requests != 1 {
+		t.Fatal("identity changed or repeated exchange")
+	}
+	if _, e := os.Stat(filepath.Join(home(c), "pending.json")); !os.IsNotExist(e) {
+		t.Fatal("pending not retired")
+	}
+}
 func TestCallbackFailedExchangeRetainsStateAndBothHTTPStatuses(t *testing.T) {
 	c, _, raw := callbackFixture(t)
 	old := client
@@ -179,11 +221,12 @@ func TestReadOnlyProbeSendsNoDeviceCredential(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 	})}
+	oldDiagnostic := persistDiagnostic(operationFailure("RETURN_URI", "INVALID_RETURN", nil))
 	diagnose()
 	after, _ := os.ReadFile(filepath.Join(home(c), "pending.json"))
 	var d diagnosticReceipt
-	loadJSON(filepath.Join(base(), "diagnostic.json"), &d)
-	if string(pending) != string(after) || n != 1 || d.Code != "LOCAL_PROOF_AND_API_REACHABLE" {
+	loadJSON(filepath.Join(base(), "diagnostic-readonly.json"), &d)
+	if string(pending) != string(after) || n != 1 || d.Code != "LOCAL_PROOF_AND_API_REACHABLE" || d.Reference == oldDiagnostic.Reference {
 		t.Fatal("probe changed state or missing proof")
 	}
 }
@@ -211,5 +254,45 @@ func TestLostExchangeAcknowledgementRecoversWithoutSecondExchange(t *testing.T) 
 	var state State
 	if n != 2 || loadJSON(filepath.Join(home(c), "enrollment.json"), &state) != nil || state.Device != record {
 		t.Fatal("recovery failed")
+	}
+}
+
+func TestMalformedReturnsPreserveIdentityAndPending(t *testing.T) {
+	for _, variant := range []string{"/other", "//", "/%2e", "/%2f", "%2f", "/../", ":443", "?extra=x", "?state=duplicate", "?code=duplicate", "?deviceId=duplicate", "?bad=%zz", "?bad=x;y", "#", "#fragment"} {
+		t.Run(variant, func(t *testing.T) {
+			c, _, raw := callbackFixture(t)
+			cert, _ := os.ReadFile(filepath.Join(home(c), "Etat", "cert.pem"))
+			pending, _ := os.ReadFile(filepath.Join(home(c), "pending.json"))
+			if strings.HasPrefix(variant, "?") {
+				raw += "&" + variant[1:]
+			} else if strings.HasPrefix(variant, "#") {
+				raw += variant
+			} else {
+				raw = strings.Replace(raw, "enrollment?", "enrollment"+variant+"?", 1)
+			}
+			old := client
+			defer func() { client = old }()
+			client = &http.Client{Transport: captureTransport(func(*http.Request) (*http.Response, error) { t.Fatal("network on malformed return"); return nil, nil })}
+			var op *operationError
+			if e := callback(raw); !errors.As(e, &op) || op.Stage != "RETURN_URI" {
+				t.Fatal("malformed return accepted", e)
+			}
+			afterCert, _ := os.ReadFile(filepath.Join(home(c), "Etat", "cert.pem"))
+			afterPending, _ := os.ReadFile(filepath.Join(home(c), "pending.json"))
+			if string(cert) != string(afterCert) || string(pending) != string(afterPending) {
+				t.Fatal("local state changed")
+			}
+		})
+	}
+}
+
+func TestReadOnlyDiagnosticWriteFailureIsExplicit(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	if e := os.MkdirAll(filepath.Join(base(), "diagnostic-readonly.json"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	r, e := persistDiagnosticFile(operationFailure("READ_ONLY_DIAGNOSTIC", "LOCAL_PROOF_AND_API_REACHABLE", nil), "diagnostic-readonly.json")
+	if e == nil || r.Reference == "" || r.At == "" {
+		t.Fatal("write failure hidden")
 	}
 }

@@ -1,4 +1,4 @@
-# Installateur employé OrganisationOS — candidat 0.3.2
+# Installateur employé OrganisationOS — candidat 0.3.3
 
 Ce programme Go est l'installateur et l'accompagnateur du moteur, pas un nouveau
 moteur Syncthing. Il embarque exactement le Windows amd64 v2.1.6-oos.2 reçu,
@@ -62,5 +62,6 @@ certificat. Le serveur réutilise son enregistrement pour la même identité et 
 utilisateur, sans copie des sessions de qualification. L’installation conserve les
 anciennes releases, les fichiers, la configuration et les conflits.
 
-La cause initiale sur SADP251218M n’est pas encore établie. La nouvelle instrumentation
-permet de la préciser ; elle n’est pas présentée comme une réception Windows réussie.
+La collecte réelle Windows établit que le retour a le chemin `/`, refusé par la 0.3.2 qui exigeait un chemin vide. La 0.3.3 accepte exclusivement les deux formes vide et `/` non encodé. Les autres chemins, fragments, autorités, échappements invalides et paramètres inconnus ou dupliqués sont refusés avant tout échange. Les vérifications de demande, identité, preuve et portée restent obligatoires. Une demande expirée se reprend avec le même certificat depuis l’application, sans suppression locale. La réception réelle Windows du correctif reste à effectuer.
+
+Le mode `--diagnose` écrit exclusivement `diagnostic-readonly.json`, avec sa propre référence et heure UTC. Un échec d’écriture est annoncé explicitement : aucun ancien reçu ne vaut preuve du nouveau lancement. Les erreurs de connexion gardent `diagnostic.json`.

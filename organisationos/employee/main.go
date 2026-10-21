@@ -34,7 +34,7 @@ import (
 
 var errRunning = errors.New("employee helper already running")
 
-const version = "0.3.2-candidate.1"
+const version = "0.3.3-candidate.1"
 const engineSHA = "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
 
 //go:embed assets/engine.bin
@@ -403,10 +403,13 @@ func begin(c Config) error {
 }
 func callback(raw string) error {
 	u, e := url.Parse(raw)
-	if e != nil || u.Scheme != "organisationos-syncthing" || u.Host != "enrollment" || u.Path != "" || u.Fragment != "" || u.User != nil || u.Opaque != "" {
+	if e != nil || u.Scheme != "organisationos-syncthing" || u.Host != "enrollment" || (u.Path != "" && u.Path != "/") || u.RawPath != "" || strings.Contains(raw, "#") || u.Fragment != "" || u.User != nil || u.Opaque != "" {
 		return operationFailure("RETURN_URI", "INVALID_RETURN", nil)
 	}
-	q := u.Query()
+	q, e := url.ParseQuery(u.RawQuery)
+	if e != nil {
+		return operationFailure("RETURN_URI", "INVALID_RETURN", nil)
+	}
 	for k, v := range q {
 		if len(v) != 1 || (k != "state" && k != "code" && k != "deviceId") {
 			return operationFailure("RETURN_URI", "INVALID_RETURN", nil)
