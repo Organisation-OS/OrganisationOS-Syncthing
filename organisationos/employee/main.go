@@ -34,7 +34,7 @@ import (
 
 var errRunning = errors.New("employee helper already running")
 
-const version = "0.3.3-candidate.1"
+const version = "0.3.4-candidate.1"
 const engineSHA = "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
 
 //go:embed assets/engine.bin
@@ -207,7 +207,12 @@ func prepare(c Config, engine string) error {
 	if e := os.Mkdir(state, 0700); e != nil {
 		return e
 	}
-	command := exec.Command(engine, "generate", "--home", state, "--no-port-probing")
+	password, e := randomHex(32)
+	if e != nil {
+		return e
+	}
+	command := exec.Command(engine, "generate", "--home", state, "--no-port-probing", "--gui-user", "OrganisationOS", "--gui-password", "-")
+	command.Stdin = strings.NewReader(password + "\n")
 	hide(command)
 	if e := command.Run(); e != nil {
 		return errors.New("identity generation failed")
@@ -613,6 +618,9 @@ func run(c Config, engine string) error {
 		case <-done:
 			return errors.New("local engine stopped; files retained")
 		case <-timer.C:
+			if e = waitSecureGUI(c); e != nil {
+				return operationFailure("LOCAL_GUI", "PROTECTION_NOT_CONFIRMED", nil)
+			}
 			var state State
 			if loadJSON(filepath.Join(home(c), "enrollment.json"), &state) == nil && uuidPattern.MatchString(state.Device) {
 				path := "/api/v1/documents/offline/devices/" + state.Device + "/configuration"
@@ -707,6 +715,14 @@ func install(configFile string) error {
 	command := exec.Command(installed, "run", c.Instance)
 	hide(command)
 	if e = command.Start(); e != nil {
+		return e
+	}
+	// Also upgrades a legacy engine already running under the previous helper.
+	// The native GUI patch preserves identity, shares, API key and device state.
+	if e = waitSecureGUI(c); e != nil {
+		return operationFailure("LOCAL_GUI", "PROTECTION_NOT_CONFIRMED", nil)
+	}
+	if resumed, e := resumeEnrollment(c); resumed || e != nil {
 		return e
 	}
 	return begin(c)
