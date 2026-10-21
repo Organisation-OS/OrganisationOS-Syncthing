@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 """Prepare local private state once; no service installation, enrollment or publication."""
 import base64
+from decimal import Decimal, InvalidOperation
 import argparse,hashlib,ipaddress,json,os,pathlib,re,stat,subprocess,tempfile,xml.etree.ElementTree as ET
 PIN='9eaf8cad615cfb07f17af7b87f0e3e77e5a99d902c6f971909bcca4bd3102d6b'
 def certificate_identity(home):
@@ -32,7 +33,9 @@ def prepare(binary,home,listen,gui,qualification=False):
    p=home/n
    if not p.is_file() or p.is_symlink() or p.stat().st_nlink!=1 or p.stat().st_uid!=os.getuid():raise ValueError('State incomplete or unsafe')
   tree=ET.parse(home/'config.xml');r=tree.getroot()
-  if r.findtext('options/minHomeDiskFree')!='42949672960' or r.find('options/minHomeDiskFree').get('unit')!='B':raise ValueError('Operational reserve differs; explicit migration required')
+  try:reserve=Decimal(r.findtext('options/minHomeDiskFree') or '')
+  except InvalidOperation:raise ValueError('Invalid operational reserve') from None
+  if not reserve.is_finite() or reserve!=Decimal(42949672960) or r.find('options/minHomeDiskFree').get('unit')!='B':raise ValueError('Operational reserve differs; explicit migration required')
   if r.findtext('options/listenAddress')!=listen or r.findtext('gui/address')!=gui:raise ValueError('Existing endpoint differs; migration required')
   for n in ['globalAnnounceEnabled','localAnnounceEnabled','relaysEnabled','natEnabled','crashReportingEnabled']:
    if r.findtext('options/'+n)!='false':raise ValueError('Unexpected network option')

@@ -70,10 +70,23 @@ def worker_environment(runtime,config):
  need(values.get('ORG_CONFIGURATION_PATH')==str(config) and all(k in values for k in ['ORG_LOG','ORG_AUTHORIZATION_DATABASE_SOCKET','ORG_DOCUMENTS_STORAGE_ROOT']))
  return ''.join('Environment='+json.dumps(k+'='+v,ensure_ascii=False).replace('%','%%')+'\n'for k,v in sorted(values.items()))
 
+def admit_sequence(state,m,envelope,superseded,public):
+ manifestSha=digest(canonical(envelope))
+ if m['sequence']==state['sequence'] and state.get('manifestSha256')==manifestSha:return []
+ if m['sequence']==state['sequence']+1:return []
+ # One CP-signed candidate may have failed before adoption. Preserve it explicitly;
+ # never manufacture an installation receipt or silently relax monotonic sequencing.
+ need(superseded is not None)
+ skipped=verify(superseded,public)
+ need(skipped['installationId']==m['installationId'] and skipped['instanceId']==m['instanceId'])
+ need(skipped['sequence']==state['sequence']+1 and m['sequence']==skipped['sequence']+1)
+ need(state.get('artifactSha256')=='c39eac51f1da66fb283a0017d3e70a3f4308cbb4a7f9dd5b7ef531910301a2f0')
+ return [{'sequence':skipped['sequence'],'manifestSha256':digest(canonical(superseded)),'status':'SUPERSEDED_WITHOUT_INSTALLATION'}]
+
 def main():
- ap=argparse.ArgumentParser();ap.add_argument('--supervisor',required=True);ap.add_argument('--envelope',required=True);ap.add_argument('--artifact',required=True);ap.add_argument('--preflight',action='store_true');args=ap.parse_args();need(os.geteuid()==0)
+ ap=argparse.ArgumentParser();ap.add_argument('--supervisor',required=True);ap.add_argument('--envelope',required=True);ap.add_argument('--artifact',required=True);ap.add_argument('--preflight',action='store_true');ap.add_argument('--superseded-envelope');args=ap.parse_args();need(os.geteuid()==0)
  s=read(trusted(args.supervisor));policy=read(trusted(s['policy']));native=read(trusted(s['config']));identity=read(trusted(P(s['state'])/'identity.json'))
- envelope=read(args.envelope);m=verify(envelope,base64.b64decode(native['public_key'],validate=True));need(m['installationId']==identity['installation_id']);files=unpack(P(args.artifact).read_bytes(),m['artifact']);runtime=policy['runtime'];config=trusted(runtime['config_directory'],True)
+ envelope=read(args.envelope);public=base64.b64decode(native['public_key'],validate=True);superseded=read(args.superseded_envelope)if args.superseded_envelope else None;m=verify(envelope,public);need(m['installationId']==identity['installation_id']);files=unpack(P(args.artifact).read_bytes(),m['artifact']);runtime=policy['runtime'];config=trusted(runtime['config_directory'],True)
  metadata=read(trusted(P('/etc/organisation/integrations/metadata-v2.json')));need(any(o.get('scope',{}).get('instanceId')==m['instanceId'] for o in metadata['owners']));core=pwd.getpwuid(metadata['runtimeUid']);need(core.pw_uid>0 and metadata['portalUid']!=core.pw_uid)
  listen,proxy,hostname=INSTANCES[m['instanceId']];need(run(['/usr/sbin/ip','-j','address','show']).find(('"local":"'+listen+'"').encode())>=0 or any(a.get('local')==listen for i in json.loads(run(['/usr/sbin/ip','-j','address','show'])) for a in i.get('addr_info',[])))
  need(P('/usr/sbin/nft').is_file() and P('/usr/bin/python3').is_file())
@@ -86,7 +99,7 @@ def main():
  currentPath=P('/var/lib/organisation-document-runtime/current.json')
  if currentPath.exists():
   prior=read(trusted(currentPath));manifestSha=digest(canonical(envelope))
-  need(m['sequence']==prior['sequence'] and prior.get('manifestSha256')==manifestSha or m['sequence']==prior['sequence']+1)
+  admit_sequence(prior,m,envelope,superseded,public)
   if prior.get('artifactSha256')!=m['artifact']['sha256']:
    need(prior.get('artifactSha256')=='c39eac51f1da66fb283a0017d3e70a3f4308cbb4a7f9dd5b7ef531910301a2f0' or prior.get('artifactSha256')=='5c4b74f4cd2207a2767378b1adb04d0e413bae83e237bb0829411bfef3ccdf13' and not prior.get('workerActivated'))
    import xml.etree.ElementTree as ET
@@ -96,7 +109,7 @@ def main():
  with (parent/'install.lock').open('a') as lock:
   os.chmod(lock.name,0o600);fcntl.flock(lock,fcntl.LOCK_EX)
   state=read(parent/'current.json') if (parent/'current.json').exists() else {'sequence':0}
-  manifestSha=digest(canonical(envelope));need(m['sequence']==state['sequence'] and state.get('manifestSha256')==manifestSha or m['sequence']==state['sequence']+1)
+  manifestSha=digest(canonical(envelope));skipped=admit_sequence(state,m,envelope,superseded,public)
   try:user=pwd.getpwnam('organisationos-syncthing')
   except KeyError:run(['/usr/sbin/useradd','--system','--no-create-home','--home-dir','/nonexistent','--shell','/usr/sbin/nologin','--user-group','organisationos-syncthing']);user=pwd.getpwnam('organisationos-syncthing')
   need(user.pw_uid not in [0,core.pw_uid] and user.pw_shell=='/usr/sbin/nologin' and os.getgrouplist(user.pw_name,user.pw_gid)==[user.pw_gid])
@@ -175,7 +188,7 @@ def main():
    for name,content in units.items():write(P('/etc/systemd/system')/name,content.encode())
   run(['/usr/bin/systemctl','daemon-reload']);run(['/usr/bin/systemctl','reset-failed','organisationos-syncthing-broker.socket','organisationos-syncthing-broker.service','organisationos-syncthing.service']);run(['/usr/bin/systemctl','enable','--now','organisationos-syncthing-firewall.service','organisationos-syncthing.service','organisationos-syncthing-broker.socket'])
   if m['activateWorker']:run(['/usr/bin/systemctl','enable','--now','organisationos-offline-worker.timer'])
-  receipt={'schema':'oos-document-runtime-installation-v1','status':'INSTALLED','instanceId':m['instanceId'],'sequence':m['sequence'],'manifestSha256':manifestSha,'artifactSha256':m['artifact']['sha256'],'engineSha256':PIN,'serverDeviceKey':generated['deviceId'],'listen':'tcp://'+listen+':22000','publicEndpoint':'tcp://'+hostname+':22000','proxySource':proxy,'administration':'127.0.0.1:8384','workerActivated':m['activateWorker'],'employeeDevicesCreated':0,'existingDataPreserved':True}
+  receipt={'schema':'oos-document-runtime-installation-v1','status':'INSTALLED','instanceId':m['instanceId'],'sequence':m['sequence'],'manifestSha256':manifestSha,'artifactSha256':m['artifact']['sha256'],'engineSha256':PIN,'serverDeviceKey':generated['deviceId'],'listen':'tcp://'+listen+':22000','publicEndpoint':'tcp://'+hostname+':22000','proxySource':proxy,'administration':'127.0.0.1:8384','workerActivated':m['activateWorker'],'employeeDevicesCreated':0,'existingDataPreserved':True,'supersededWithoutInstallation':skipped}
   write(parent/(manifestSha+'.receipt.json'),receipt,0o600)
   # Durable sequence replacement is atomic; prior immutable receipts and generated identity are retained.
   fd,temp=tempfile.mkstemp(prefix='.current-',dir=parent)
