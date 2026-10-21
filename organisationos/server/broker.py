@@ -18,11 +18,24 @@ def device(value):
  if not isinstance(value,str) or not re.fullmatch(r'[A-Z2-7]{7}(?:-[A-Z2-7]{7}){7}',value):raise Refused()
  return value
 
+def stat_identity(s):return hashlib.sha256(str((s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)).encode()).hexdigest()
+
 def components(path):
- if not isinstance(path,str) or len(path.encode())>200:raise Refused()
+ if not isinstance(path,str) or len(path.encode())>600:raise Refused()
  bits=path.split('/')
- if len(bits)!=3 or bits[0]!='Documents' or uid(bits[1])!=bits[1] or not bits[2] or bits[2] in ['.','..'] or any(c in bits[2] for c in '\\:\x00') or bits[2].startswith('.'):raise Refused()
+ if not 2<=len(bits)<=65 or bits[0]!='Documents':raise Refused()
+ for bit in bits[1:]:
+  if not bit or bit in ['.','..'] or bit.startswith('.') or bit.endswith((' ','.')) or any(ord(c)<32 or c in '\\:\x00*?[]{}!<>"|' for c in bit):raise Refused()
  return bits
+
+def ignore_policy(paths):
+ if not isinstance(paths,list) or len(paths)>8192 or len(set(paths))!=len(paths):raise Refused()
+ lines=[]
+ for path in sorted(paths):
+  components(path)
+  stem,extension=os.path.splitext(path)
+  lines.extend(['!/'+path,'!/'+stem+'.sync-conflict-*'+extension])
+ return lines+['*']
 
 class Projections:
  def __init__(self,path):
@@ -78,22 +91,49 @@ class Projections:
     if not stat.S_ISREG(before.st_mode) or before.st_nlink!=1 or before.st_size>MAX_FILE:raise Refused()
     data=stream.read(MAX_FILE+1);after=os.fstat(stream.fileno());current=os.stat(parts[-1],dir_fd=fd,follow_symlinks=False)
     if len(data)!=before.st_size or (before.st_dev,before.st_ino,before.st_mtime_ns,before.st_ctime_ns,before.st_size)!=(after.st_dev,after.st_ino,after.st_mtime_ns,after.st_ctime_ns,after.st_size) or (current.st_dev,current.st_ino)!=(before.st_dev,before.st_ino):raise Refused()
-    return {'sha256':hashlib.sha256(data).hexdigest(),'bytes':base64.b64encode(data).decode(),'size':len(data)}
+    return {'sha256':hashlib.sha256(data).hexdigest(),'bytes':base64.b64encode(data).decode(),'size':len(data),'observedStat':stat_identity(after)}
   finally:os.close(fd)
  def inventory(self,selection):
   fd=self.directory([uid(selection)]);items=[]
   def walk(directory,prefix,depth):
    for name in sorted(os.listdir(directory)):
-    if name=='.stfolder' or name=='.stversions' or name.startswith('.syncthing.') or name.startswith('.oos-'):continue
-    if len(items)>=2048:raise Refused()
+    if name in ['.stfolder','.stversions','.stignore'] or name.startswith('.syncthing.') or name.startswith('.oos-'):continue
+    if len(items)>=32768:raise Refused()
     path=prefix+name;s=os.stat(name,dir_fd=directory,follow_symlinks=False)
-    if stat.S_ISDIR(s.st_mode) and depth<3:
+    if stat.S_ISDIR(s.st_mode) and depth<65:
      child=os.open(name,os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=directory)
      try:walk(child,path+'/',depth+1)
      finally:os.close(child)
-    else:items.append({'path':path,'kind':'FILE' if stat.S_ISREG(s.st_mode) and s.st_nlink==1 else 'REFUSED','size':s.st_size})
+    else:items.append({'path':path,'kind':'FILE' if stat.S_ISREG(s.st_mode) and s.st_nlink==1 else 'REFUSED','size':s.st_size,'observedStat':stat_identity(s)})
   try:walk(fd,'',0);return items
   finally:os.close(fd)
+
+ def policy_matches(self,selection,lines):
+  fd=self.directory([uid(selection)])
+  try:
+   try:inp=os.open('.stignore',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=fd)
+   except FileNotFoundError:return False
+   with os.fdopen(inp,'rb')as f:
+    st=os.fstat(f.fileno())
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink!=1:raise Refused()
+    expected=('\n'.join(lines)+'\n').encode()
+    return st.st_size==len(expected) and f.read(len(expected)+1)==expected
+  finally:os.close(fd)
+ def policy(self,selection,lines):
+  self.ensure(selection);fd=self.directory([uid(selection)]);temp='.oos-'+uuid.uuid4().hex
+  try:
+   try:
+    old=os.open('.stignore',os.O_RDONLY|os.O_NOFOLLOW,dir_fd=fd)
+    with os.fdopen(old,'rb')as f:
+     if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):raise Refused()
+   except FileNotFoundError:pass
+   out=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=fd)
+   with os.fdopen(out,'w')as f:f.write('\n'.join(lines)+'\n');f.flush();os.fsync(f.fileno())
+   os.replace(temp,'.stignore',src_dir_fd=fd,dst_dir_fd=fd);os.fsync(fd)
+  finally:
+   try:os.unlink(temp,dir_fd=fd)
+   except FileNotFoundError:pass
+   os.close(fd)
 
 class Engine:
  def __init__(self,config,qualification=False):
@@ -128,7 +168,7 @@ class Engine:
   if not isinstance(request,dict) or request.get('instanceId')!=self.config['instanceId']:raise Refused()
   op=request.get('operation');args=request.get('arguments')
   if set(request)!=set(['instanceId','operation','arguments']) or not isinstance(args,dict):raise Refused()
-  expected={'identity':[],'pair':['deviceKey'],'remove':['deviceKey'],'folder':['selection','deviceKey','label'],'removeFolder':['selection'],'put':['selection','path','bytes','sha256'],'read':['selection','path'],'inventory':['selection']}
+  expected={'identity':[],'pair':['deviceKey'],'remove':['deviceKey'],'folder':['selection','deviceKey','label'],'removeFolder':['selection'],'put':['selection','path','bytes','sha256'],'read':['selection','path'],'inventory':['selection'],'restrict':['selection','paths'],'progress':['selection','deviceKey','expectedFiles']}
   if op not in expected or set(args)!=set(expected[op]):raise Refused()
   identity=self.identity()
   if op=='identity':return identity
@@ -150,6 +190,28 @@ class Engine:
    # Active transport must disappear before revocation is confirmed.
    if self.api('GET','system/connections').get('connections',{}).get(key,{}).get('connected'):raise Refused()
    return {'status':'REMOVED'}
+  if op=='restrict':
+   selection=uid(args['selection']);lines=ignore_policy(args['paths']);folderid='oos-'+selection
+   prior=next((f for f in self.api('GET','config/folders')if f['id']==folderid),None)
+   if prior:
+    if prior['path']!=self.projections.path+'/'+selection or prior['type']!='sendreceive':raise Refused()
+    if self.projections.policy_matches(selection,lines):return {'status':'UNCHANGED','paused':prior.get('paused',False),'allowedFiles':len(args['paths'])}
+    self.api('PATCH','config/folders/'+folderid,{'paused':True})
+    if not self.api('GET','config/folders/'+folderid).get('paused'):raise Refused()
+   # Read by the next folder runner before it can exchange. Failure leaves it paused.
+   self.projections.policy(selection,lines)
+   return {'status':'RESTRICTED','paused':prior is not None,'allowedFiles':len(args['paths'])}
+  if op=='progress':
+   selection=uid(args['selection']);key=device(args['deviceKey']);folderid='oos-'+selection
+   prior=self.api('GET','config/folders/'+folderid)
+   if prior['path']!=self.projections.path+'/'+selection or sorted(d['deviceID']for d in prior['devices'])!=sorted([key,identity['deviceKey']]):raise Refused()
+   remote=self.api('GET','db/completion?folder='+folderid+'&device='+key)
+   local=self.api('GET','db/status?folder='+folderid)
+   connected=self.api('GET','system/connections').get('connections',{}).get(key,{}).get('connected')is True
+   expected=args['expectedFiles']
+   if type(expected)is not int or not 0<=expected<=8192:raise Refused()
+   complete=local.get('localFiles',-1)>=expected and local.get('globalFiles',-1)>=expected and connected and not prior.get('paused') and local.get('state')=='idle' and local.get('pullErrors')==0 and local.get('needTotalItems')==0 and remote.get('needItems')==0 and remote.get('needDeletes')==0 and remote.get('completion')==100
+   return {'connected':connected,'complete':complete,'completion':remote.get('completion',0),'remainingBytes':remote.get('needBytes'),'remainingItems':remote.get('needItems'),'localErrors':local.get('pullErrors',0),'indexedFiles':local.get('localFiles',0)}
   if op in ['folder','removeFolder']:
    selection=uid(args['selection']);folderid='oos-'+selection
    c=self.api('GET','config/folders');prior=next((f for f in c if f['id']==folderid),None)
@@ -162,6 +224,7 @@ class Engine:
    path=self.projections.ensure(selection)
    if prior:
     if prior.get('minDiskFree')!={'value':42949672960,'unit':'B'} or prior['path']!=path or prior['type']!='sendreceive' or sorted(d['deviceID'] for d in prior['devices'])!=sorted([key,identity['deviceKey']]) or any(d.get('encryptionPassword') for d in prior['devices']):raise Refused()
+    if prior.get('paused'):self.api('PATCH','config/folders/'+folderid,{'paused':False})
     return {'status':'UNCHANGED'}
    folder=self.api('GET','config/defaults/folder');folder.update(id=folderid,label=label,path=path,type='sendreceive',devices=[{'deviceID':identity['deviceKey'],'encryptionPassword':''},{'deviceID':key,'encryptionPassword':''}],paused=False,ignorePerms=True,fsWatcherEnabled=True,rescanIntervalS=60,minDiskFree={'value':42949672960,'unit':'B'})
    self.api('PUT','config/folders/'+folderid,folder);return {'status':'SHARED'}

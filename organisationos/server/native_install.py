@@ -82,6 +82,15 @@ def main():
   source=(P(runtime['core_releases'])/P(runtime['core_marker']).read_text().strip()) if runtime.get('adapter')=='historical-web-v1' else P(policy['prefix'])/'active/core'
   need((source/'bin/documents-offline-worker').is_file())
   # The native loader and seven-table prerequisite remain authoritative at each worker invocation.
+ # Read-only upgrade eligibility is checked before publishing or staging mutable runtime configuration.
+ currentPath=P('/var/lib/organisation-document-runtime/current.json')
+ if currentPath.exists():
+  prior=read(trusted(currentPath));manifestSha=digest(canonical(envelope))
+  need(m['sequence']==prior['sequence'] and prior.get('manifestSha256')==manifestSha or m['sequence']==prior['sequence']+1)
+  if prior.get('artifactSha256')!=m['artifact']['sha256']:
+   need(prior.get('artifactSha256')=='c39eac51f1da66fb283a0017d3e70a3f4308cbb4a7f9dd5b7ef531910301a2f0' or prior.get('artifactSha256')=='5c4b74f4cd2207a2767378b1adb04d0e413bae83e237bb0829411bfef3ccdf13' and not prior.get('workerActivated'))
+   import xml.etree.ElementTree as ET
+   need(not ET.parse('/var/lib/organisationos-syncthing/state/config.xml').getroot().findall('folder'))
  if args.preflight:print(json.dumps({'status':'PREFLIGHT_PASS','instanceId':m['instanceId'],'artifactSha256':m['artifact']['sha256'],'workerRequested':m['activateWorker'],'providerSecretsImported':0}));return
  parent=P('/var/lib/organisation-document-runtime');directory(parent,0o700)
  with (parent/'install.lock').open('a') as lock:
@@ -103,17 +112,20 @@ def main():
   migrating=state.get('artifactSha256') not in [None,m['artifact']['sha256']]
   environment=worker_environment(runtime,config)
   if migrating:
-   need(state.get('artifactSha256')=='5c4b74f4cd2207a2767378b1adb04d0e413bae83e237bb0829411bfef3ccdf13' and not state.get('workerActivated'))
+   activeUpgrade=state.get('artifactSha256')=='c39eac51f1da66fb283a0017d3e70a3f4308cbb4a7f9dd5b7ef531910301a2f0'
+   need(activeUpgrade or state.get('artifactSha256')=='5c4b74f4cd2207a2767378b1adb04d0e413bae83e237bb0829411bfef3ccdf13' and not state.get('workerActivated'))
+   # This transition is qualified with retained employee identities, before first production projection.
+   # It refuses live folders rather than silently claiming a populated-runtime upgrade.
+   identityBefore={n:digest((home/n).read_bytes())for n in ['cert.pem','key.pem']}
+
    import xml.etree.ElementTree as ET
-   priorconfig=ET.parse(home/'config.xml').getroot();need(not priorconfig.findall('folder') and all(d.get('id')==generated['deviceId']for d in priorconfig.findall('device')))
+   priorconfig=ET.parse(home/'config.xml').getroot();need(not priorconfig.findall('folder'));peersBefore=sorted(d.get('id')for d in priorconfig.findall('device'));need(activeUpgrade or peersBefore==[generated['deviceId']])
    previousRelease='/opt/organisationos-syncthing/releases/'+state['artifactSha256']
    backups=parent/('migration-'+state['artifactSha256']);directory(backups,0o700)
    p=P('/etc/organisationos-syncthing/service.json');old={**descriptor,'engineBinary':previousRelease+'/organisationos-syncthing'};trusted(p)
    need(read(p) in [old,descriptor]);write(backups/'service.json',old,0o600)
-   fd,temp=tempfile.mkstemp(prefix='.service-',dir=p.parent)
-   with os.fdopen(fd,'wb')as f:os.fchown(f.fileno(),0,user.pw_gid);os.fchmod(f.fileno(),0o640);f.write(canonical(descriptor)+b'\n');f.flush();os.fsync(f.fileno())
-   os.replace(temp,p)
-  write('/etc/organisationos-syncthing/service.json',descriptor,0o640,0,user.pw_gid);write('/etc/organisationos-syncthing/firewall.json',{'listenIp':listen,'proxyIp':proxy},0o644)
+  if not migrating:write('/etc/organisationos-syncthing/service.json',descriptor,0o640,0,user.pw_gid)
+  write('/etc/organisationos-syncthing/firewall.json',{'listenIp':listen,'proxyIp':proxy},0o644)
   launch={'schema':1,'instanceId':m['instanceId'],'configurationPath':str(config),'adapter':runtime.get('adapter'),'coreMarker':runtime.get('core_marker'),'coreReleases':runtime.get('core_releases'),'corePath':str(P(policy['prefix'])/'active/core'),'moduleBinding':str(config),'moduleRegistry':read(trusted(P('/etc/organisation-module-runtimes')/(digest(str(config).encode())+'.json')))['registry_path']}
   write('/etc/organisationos-syncthing/worker.json',launch,0o644)
   common='NoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectControlGroups=yes\nCapabilityBoundingSet=\nUMask=0077\n'
@@ -126,13 +138,39 @@ def main():
   'organisationos-offline-worker.timer':'[Unit]\nDescription=OrganisationOS bounded offline reconciliation\n[Timer]\nOnBootSec=90\nOnUnitInactiveSec=60\nAccuracySec=10\nUnit=organisationos-offline-worker.service\n[Install]\nWantedBy=timers.target\n'}
   if migrating:
    for name,content in units.items():
-    p=P('/etc/systemd/system')/name;old=content.replace(str(release),previousRelease).replace(environment,'').encode();trusted(p)
+    p=P('/etc/systemd/system')/name;old=content.replace(str(release),previousRelease);old=(old if activeUpgrade else old.replace(environment,'')).encode();trusted(p)
     need(p.read_bytes() in [old,content.encode()]);write(backups/name,old,0o600)
-   run(['/usr/bin/systemctl','stop','organisationos-syncthing-broker.socket','organisationos-syncthing-broker.service','organisationos-syncthing.service'])
-   for name,content in units.items():
-    p=P('/etc/systemd/system')/name;fd,temp=tempfile.mkstemp(prefix='.document-runtime-',dir=p.parent)
-    with os.fdopen(fd,'wb')as f:os.fchmod(f.fileno(),0o644);f.write(content.encode());f.flush();os.fsync(f.fileno())
-    os.replace(temp,p)
+   timerWasActive=subprocess.run(['/usr/bin/systemctl','is-active','--quiet','organisationos-offline-worker.timer']).returncode==0
+   run(['/usr/bin/systemctl','stop','organisationos-offline-worker.timer'])
+   try:
+    import time
+    deadline=time.monotonic()+270
+    while run(['/usr/bin/systemctl','show','organisationos-offline-worker.service','-p','MainPID','--value']).strip()!=b'0':
+     need(time.monotonic()<deadline);time.sleep(1)
+    # Worker is quiescent; an employee cannot create server folders through the private API.
+    priorconfig=ET.parse(home/'config.xml').getroot();need(not priorconfig.findall('folder') and sorted(d.get('id')for d in priorconfig.findall('device'))==peersBefore)
+    run(['/usr/bin/systemctl','stop','organisationos-syncthing-broker.socket','organisationos-syncthing-broker.service','organisationos-syncthing.service'])
+    try:
+     for name,content in units.items():
+      p=P('/etc/systemd/system')/name;fd,temp=tempfile.mkstemp(prefix='.document-runtime-',dir=p.parent)
+      with os.fdopen(fd,'wb')as f:os.fchmod(f.fileno(),0o644);f.write(content.encode());f.flush();os.fsync(f.fileno())
+      os.replace(temp,p)
+     p=P('/etc/organisationos-syncthing/service.json');fd,temp=tempfile.mkstemp(prefix='.service-',dir=p.parent)
+     with os.fdopen(fd,'wb')as f:os.fchown(f.fileno(),0,user.pw_gid);os.fchmod(f.fileno(),0o640);f.write(canonical(descriptor)+b'\n');f.flush();os.fsync(f.fileno())
+     os.replace(temp,p)
+     run(['/usr/bin/systemctl','daemon-reload']);run(['/usr/bin/systemctl','start','organisationos-syncthing.service','organisationos-syncthing-broker.socket'])
+     need(identityBefore=={n:digest((home/n).read_bytes())for n in identityBefore})
+     finalconfig=ET.parse(home/'config.xml').getroot();need(not finalconfig.findall('folder') and sorted(d.get('id')for d in finalconfig.findall('device'))==peersBefore)
+    except BaseException:
+     run(['/usr/bin/systemctl','stop','organisationos-syncthing-broker.socket','organisationos-syncthing-broker.service','organisationos-syncthing.service'])
+     for name in [*units,'service.json']:
+      p=P('/etc/organisationos-syncthing/service.json')if name=='service.json'else P('/etc/systemd/system')/name
+      fd,temp=tempfile.mkstemp(prefix='.restore-runtime-',dir=p.parent)
+      with os.fdopen(fd,'wb')as f:os.fchown(f.fileno(),0,user.pw_gid if name=='service.json'else 0);os.fchmod(f.fileno(),0o640 if name=='service.json'else 0o644);f.write((backups/name).read_bytes());f.flush();os.fsync(f.fileno())
+      os.replace(temp,p)
+     run(['/usr/bin/systemctl','daemon-reload']);run(['/usr/bin/systemctl','start','organisationos-syncthing.service','organisationos-syncthing-broker.socket']);raise
+   finally:
+    if timerWasActive:run(['/usr/bin/systemctl','start','organisationos-offline-worker.timer'])
   else:
    for name,content in units.items():write(P('/etc/systemd/system')/name,content.encode())
   run(['/usr/bin/systemctl','daemon-reload']);run(['/usr/bin/systemctl','reset-failed','organisationos-syncthing-broker.socket','organisationos-syncthing-broker.service','organisationos-syncthing.service']);run(['/usr/bin/systemctl','enable','--now','organisationos-syncthing-firewall.service','organisationos-syncthing.service','organisationos-syncthing-broker.socket'])
