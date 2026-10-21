@@ -166,3 +166,50 @@ func TestReturnParserRefusesAlternateDestinations(t *testing.T) {
 		}
 	}
 }
+func TestReadOnlyProbeSendsNoDeviceCredential(t *testing.T) {
+	c, _, _ := callbackFixture(t)
+	pending, _ := os.ReadFile(filepath.Join(home(c), "pending.json"))
+	old := client
+	defer func() { client = old }()
+	n := 0
+	client = &http.Client{Transport: captureTransport(func(r *http.Request) (*http.Response, error) {
+		n++
+		if r.Method != "GET" || r.URL.Path != "/api/v1/documents/offline/devices" || r.Header.Get("X-OrganisationOS-Device-Proof") != "" || r.Header.Get("Cookie") != "" || r.ContentLength != 0 {
+			t.Fatal("probe is not anonymous read-only")
+		}
+		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	})}
+	diagnose()
+	after, _ := os.ReadFile(filepath.Join(home(c), "pending.json"))
+	var d diagnosticReceipt
+	loadJSON(filepath.Join(base(), "diagnostic.json"), &d)
+	if string(pending) != string(after) || n != 1 || d.Code != "LOCAL_PROOF_AND_API_REACHABLE" {
+		t.Fatal("probe changed state or missing proof")
+	}
+}
+func TestLostExchangeAcknowledgementRecoversWithoutSecondExchange(t *testing.T) {
+	c, record, raw := callbackFixture(t)
+	old := client
+	oldBrowser := openBrowser
+	defer func() { client = old; openBrowser = oldBrowser }()
+	n := 0
+	client = &http.Client{Transport: captureTransport(func(r *http.Request) (*http.Response, error) {
+		n++
+		if n == 1 {
+			return nil, errors.New("lost response with SECRET")
+		}
+		if n != 2 || r.Method != "GET" || !strings.HasSuffix(r.URL.Path, "/configuration") || r.Header.Get("X-OrganisationOS-Device-Proof") == "" {
+			t.Fatal("recovery identity missing")
+		}
+		data, _ := json.Marshal(map[string]any{"data": Configuration{"ACTIVE", record, Server{c.Server, c.Address}, []Folder{}}})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(data))), Header: make(http.Header)}, nil
+	})}
+	openBrowser = func(string) error { return nil }
+	if e := callback(raw); e != nil {
+		t.Fatal(e)
+	}
+	var state State
+	if n != 2 || loadJSON(filepath.Join(home(c), "enrollment.json"), &state) != nil || state.Device != record {
+		t.Fatal("recovery failed")
+	}
+}
