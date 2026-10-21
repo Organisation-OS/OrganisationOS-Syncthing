@@ -1240,12 +1240,14 @@ func (m *model) ClusterConfig(conn protocol.Connection, cm *protocol.ClusterConf
 				break
 			}
 		}
-        // Explicit DEV qualification diagnostic: public identities only, never passwords or file contents.
-        if os.Getenv("OOS_QUALIFICATION_CLUSTER_DIAGNOSTICS") == "1" {
-            ids := make([]string, len(folder.Devices))
-            for i, dev := range folder.Devices { ids[i] = dev.ID.String() }
-            slog.Info("OrganisationOS received cluster identities", "folderId", folder.ID, "expectedLocal", m.id.String(), "expectedRemote", deviceID.String(), "announcedDevices", ids)
-        }
+		// Explicit DEV qualification diagnostic: public identities only, never passwords or file contents.
+		if os.Getenv("OOS_QUALIFICATION_CLUSTER_DIAGNOSTICS") == "1" {
+			ids := make([]string, len(folder.Devices))
+			for i, dev := range folder.Devices {
+				ids[i] = dev.ID.String()
+			}
+			slog.Info("OrganisationOS received cluster identities", "folderId", folder.ID, "expectedLocal", m.id.String(), "expectedRemote", deviceID.String(), "announcedDevices", ids)
+		}
 		if info.remote.ID == protocol.EmptyDeviceID {
 			slog.Warn("Device sent cluster-config without the device info for the remote", folder.LogAttr(), deviceID.LogAttr())
 			return errMissingRemoteInClusterConfig
