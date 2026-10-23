@@ -34,7 +34,7 @@ import (
 
 var errRunning = errors.New("employee helper already running")
 
-const version = "0.3.5-dev.1"
+const version = "0.3.6-dev.1"
 const engineSHA = "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
 
 //go:embed assets/engine.bin
@@ -404,9 +404,12 @@ func begin(c Config) error {
 		hostname = "Mon appareil"
 	}
 	q := url.Values{"device": {id}, "challenge": {digest([]byte(verifier))}, "state": {state}, "name": {hostname}}
-	return browser(c.Portal + "/documents/offline/enroll?" + q.Encode())
+	return openBrowser(c.Portal + "/documents/offline/enroll?" + q.Encode())
 }
 func callback(raw string) error {
+	return callbackForInstance(raw, "")
+}
+func callbackForInstance(raw, expectedInstance string) error {
 	u, e := url.Parse(raw)
 	if e != nil || u.Scheme != "organisationos-syncthing" || u.Host != "enrollment" || (u.Path != "" && u.Path != "/") || u.RawPath != "" || strings.Contains(raw, "#") || u.Fragment != "" || u.User != nil || u.Opaque != "" {
 		return operationFailure("RETURN_URI", "INVALID_RETURN", nil)
@@ -429,6 +432,9 @@ func callback(raw string) error {
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
+			continue
+		}
+		if expectedInstance != "" && entry.Name() != expectedInstance {
 			continue
 		}
 		c, e := getConfig(entry.Name())
@@ -768,6 +774,9 @@ func installConfig(c Config, admit func() error) error {
 func main() {
 	var err error
 	args := os.Args[1:]
+	if handled, code := clientInvocation(args, os.Stdin, os.Stdout); handled {
+		os.Exit(code)
+	}
 	if len(args) == 1 && strings.HasPrefix(args[0], "organisationos-syncthing:") {
 		err = callback(args[0])
 	} else if len(args) == 3 && args[0] == "install-dev" {

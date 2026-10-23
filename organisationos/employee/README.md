@@ -1,6 +1,6 @@
 # Installateur employé OrganisationOS — candidat 0.3.3
 
-Évolution additive courante : **0.3.5-dev.1**, basée sur **0.3.4-candidate.1**.
+Évolution additive courante : **0.3.6-dev.1**, basée sur **0.3.4-candidate.1**.
 Lire [DEV-ADMISSION.md](DEV-ADMISSION.md) pour l'admission CP DEV séparée et ses
 limites. Les paragraphes ci-dessous conservent le parcours legacy reçu.
 

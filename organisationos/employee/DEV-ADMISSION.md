@@ -1,4 +1,4 @@
-# Helper 0.3.5-dev.1 — candidat issu de 0.3.4-candidate.1
+# Helper 0.3.6-dev.1 — candidat issu de 0.3.4-candidate.1
 
 Base exacte : `d670136e2aa8d617c540baec3c8a6a2920ff84de`. Le moteur reste
 `v2.1.6-oos.2`, source `e80f807467f5e127f35e2de45cfd22d4091bcd42`, Windows SHA-256
@@ -43,7 +43,7 @@ les empreintes des entrées, du source et du résultat. `package_dev.py` conserv
 les notices et sources du moteur issues du bundle natif qualifié et produit la
 provenance. Il ne signe rien : le circuit CP existant signe ensuite l'enveloppe
 `organisation-employee-software-v1`, liée au ZIP final et à la provenance fournie.
-`package.provenance.admissionAudience=dev` et `installerVersion=0.3.5-dev.1` sont
+`package.provenance.admissionAudience=dev` et `installerVersion=0.3.6-dev.1` sont
 obligatoires. Les séquences natives et l'audience de publication CP restent sous
 son autorité. Aucune nouvelle clé de signature ni nouvelle offre de production.
 
@@ -109,3 +109,29 @@ refus et révocation réels. Les ports serveur loopback 28384/22223 ne constitue
 un endpoint de synchronisation accessible. Aucun compte ou service CRM/ERP réutilisé.
 L'installation MSI précédemment refusée par l'approbation automatique demeure
 exclue : ce candidat n'est pas un moyen de contourner ce refus.
+
+## Navigateur du Compagnon — protocole opt-in 0.3.6
+
+`install-dev-client <ZIP> <enveloppe>` exécute la même admission/installation
+native que `install-dev`. `connect-client <instanceId>` prépare le PKCE natif
+ou reprend un enrôlement seulement après sa preuve d'appareil courante.
+`callback-client <instanceId>` lit l'URI de retour sur stdin (4096 octets maximum)
+et limite la recherche de pending à cette instance. Le code de retour n'est
+jamais un argument de processus. Le mécanisme natif vérifie état, délai,
+identité, code, PKCE, configuration et preuve serveur sans variante de test.
+
+Ces commandes n'ouvrent ni navigateur par défaut ni boîte de notification.
+Stdout contient un seul objet JSON `oos-syncthing-client-result-v1`, avec
+helperVersion et status. Succès : `PORTAL_NAVIGATION_REQUIRED` et portalUri,
+HTTPS vers le Portal de la configuration native, chemin `/documents/offline`
+ou `/documents/offline/enroll`. Échec : `FAILED`, stage, code, reference publics.
+Le code de sortie vaut0 au succès,1 au refus. L'URL contient éventuellement le
+state/challenge publics : flux IPC transitoire, ne pas le journaliser. Aucun
+verifier, code de retour, jeton, clé ou session n'est écrit dans cette réponse.
+
+Le parent doit vérifier version/hash du helper, schéma fermé et origine/chemin
+de l'URL contre son instance courante avant affichage dans son profil privé.
+Il intercepte le protocole callback sans le transmettre au navigateur personnel.
+La session utilisateur et toute approbation restent natives Core/Portal ; le
+résultat de lancement n'est pas une preuve d'enrôlement ni de transfert.
+Les commandes historiques et validate()/package.py legacy restent inchangés.

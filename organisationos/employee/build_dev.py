@@ -9,7 +9,7 @@ import subprocess, tempfile, zipfile
 
 HERE=pathlib.Path(__file__).resolve().parent
 ROOT=HERE.parents[1]
-VERSION='0.3.5-dev.1'
+VERSION='0.3.6-dev.1'
 ENGINE_SHA='14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b'
 LEGACY={'27c0be38-60bd-4dce-bb28-ef0088716a25','b7a1f6b1-c4aa-4de7-95fb-29d509d3398d'}
 sha=lambda raw:hashlib.sha256(raw).hexdigest()
