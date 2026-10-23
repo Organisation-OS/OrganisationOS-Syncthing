@@ -14,6 +14,17 @@ import (
 )
 
 func hide(c *exec.Cmd) { c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true} }
+func platformReparse(path string) bool {
+	p, e := syscall.UTF16PtrFromString(path)
+	if e != nil {
+		return true
+	}
+	attributes, e := syscall.GetFileAttributes(p)
+	return e != nil || attributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+func devInstallLock(instance string) (func(), error) {
+	return runLock(Config{Instance: instance + "-dev-install"})
+}
 func browser(u string) error {
 	c := exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", u)
 	hide(c)

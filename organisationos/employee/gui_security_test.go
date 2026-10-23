@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -49,7 +48,7 @@ func TestRealEngineGUIProtectionAndUpgrade(t *testing.T) {
 	if len(apiKey) < 20 {
 		t.Fatal("missing unique API key")
 	}
-	cmd := exec.Command(engine, "serve", "--home", dir, "--no-browser", "--no-restart", "--no-upgrade", "--no-port-probing")
+	cmd := engineServeCommand(c, engine)
 	if e = cmd.Start(); e != nil {
 		t.Fatal(e)
 	}

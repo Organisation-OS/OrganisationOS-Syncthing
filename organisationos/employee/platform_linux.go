@@ -8,9 +8,11 @@ import (
 	"os/exec"
 )
 
-func hide(*exec.Cmd)        {}
-func browser(string) error  { return errors.New("Windows employee installer only") }
-func notify(string, string) {}
+func hide(*exec.Cmd)                        {}
+func platformReparse(string) bool           { return false }
+func devInstallLock(string) (func(), error) { return nil, errors.New("Windows DEV installation only") }
+func browser(string) error                  { return errors.New("Windows employee installer only") }
+func notify(string, string)                 {}
 func runLock(Config) (func(), error) {
 	return nil, errors.New("Windows lifecycle not qualified on Linux")
 }

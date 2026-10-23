@@ -48,6 +48,7 @@ func transportFailure(err error) error {
 }
 
 var openBrowser = browser
+var showNotification = notify
 
 type diagnosticReceipt struct {
 	Schema          string `json:"schema"`
@@ -92,7 +93,7 @@ func reportReadOnly(err error) {
 	} else {
 		message += "\nRésultat de ce lancement : %LOCALAPPDATA%\\OrganisationOS\\Syncthing\\diagnostic-readonly.json."
 	}
-	notify("Syncthing OrganisationOS — diagnostic en lecture seule", message)
+	showNotification("Syncthing OrganisationOS — diagnostic en lecture seule", message)
 }
 
 func reportFailure(err error) {
@@ -106,7 +107,7 @@ func reportFailure(err error) {
 	} else {
 		message += "\nReprise : menu Démarrer → OrganisationOS → Syncthing, puis reconnectez ce même appareil. Si l’erreur revient, transmettez uniquement diagnostic.json dans %LOCALAPPDATA%\\OrganisationOS\\Syncthing."
 	}
-	notify("Syncthing OrganisationOS", message)
+	showNotification("Syncthing OrganisationOS", message)
 }
 
 // This probe uses no browser session and cannot enroll, revoke or configure a device.

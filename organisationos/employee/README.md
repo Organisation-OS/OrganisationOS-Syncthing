@@ -1,5 +1,9 @@
 # Installateur employé OrganisationOS — candidat 0.3.3
 
+Évolution additive courante : **0.3.5-dev.1**, basée sur **0.3.4-candidate.1**.
+Lire [DEV-ADMISSION.md](DEV-ADMISSION.md) pour l'admission CP DEV séparée et ses
+limites. Les paragraphes ci-dessous conservent le parcours legacy reçu.
+
 Ce programme Go est l'installateur et l'accompagnateur du moteur, pas un nouveau
 moteur Syncthing. Il embarque exactement le Windows amd64 v2.1.6-oos.2 reçu,
 SHA256 14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b,

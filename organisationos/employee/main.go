@@ -34,7 +34,7 @@ import (
 
 var errRunning = errors.New("employee helper already running")
 
-const version = "0.3.4-candidate.1"
+const version = "0.3.5-dev.1"
 const engineSHA = "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
 
 //go:embed assets/engine.bin
@@ -150,7 +150,7 @@ func getConfig(instance string) (Config, error) {
 	}
 	e := loadJSON(filepath.Join(base(), "Organisations", instance, "organisation.json"), &c)
 	if e == nil {
-		e = validate(c)
+		e = validateInstalled(c)
 	}
 	if c.Instance != instance {
 		return c, errors.New("organisation mismatch")
@@ -587,7 +587,25 @@ func configure(c Config, state State, r Configuration) error {
 	cfg["folders"] = next
 	return local(c, "PUT", "config", cfg, nil)
 }
+func engineServeCommand(c Config, engine string) *exec.Cmd {
+	command := exec.Command(engine, "serve", "--home", filepath.Join(home(c), "Etat"), "--no-browser", "--no-restart", "--no-upgrade", "--no-port-probing")
+	// Use the native inner-process mode: the helper is already the supervisor.
+	// Killing only Syncthing's monitor on Windows otherwise leaves its engine
+	// child running, including past a DEV admission deadline.
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(strings.ToUpper(entry), "STMONITORED=") {
+			command.Env = append(command.Env, entry)
+		}
+	}
+	command.Env = append(command.Env, "STMONITORED=yes")
+	hide(command)
+	return command
+}
+
 func run(c Config, engine string) error {
+	if e := validateInstalled(c); e != nil {
+		return e
+	}
 	binary, readErr := os.ReadFile(engine)
 	if readErr != nil || digest(binary) != engineSHA {
 		return errors.New("installed engine integrity refused")
@@ -603,12 +621,20 @@ func run(c Config, engine string) error {
 		return e
 	}
 	defer release()
-	command := exec.Command(engine, "serve", "--home", filepath.Join(home(c), "Etat"), "--no-browser", "--no-restart", "--no-upgrade", "--no-port-probing")
-	hide(command)
+	command := engineServeCommand(c, engine)
 	if e = command.Start(); e != nil {
 		return e
 	}
 	defer command.Process.Kill()
+	if !legacyInstance(c.Instance) {
+		trust, err := readDevTrust(devTrustBytes, time.Now())
+		if err != nil {
+			return err
+		}
+		deadline, _ := time.Parse(time.RFC3339, trust.ExpiresAt)
+		stop := time.AfterFunc(time.Until(deadline), func() { _ = command.Process.Kill() })
+		defer stop.Stop()
+	}
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	timer := time.NewTimer(3 * time.Second)
@@ -618,6 +644,9 @@ func run(c Config, engine string) error {
 		case <-done:
 			return errors.New("local engine stopped; files retained")
 		case <-timer.C:
+			if e = validateInstalled(c); e != nil {
+				return e
+			}
 			if e = waitSecureGUI(c); e != nil {
 				return operationFailure("LOCAL_GUI", "PROTECTION_NOT_CONFIRMED", nil)
 			}
@@ -651,6 +680,10 @@ func install(configFile string) error {
 	if e := validate(c); e != nil {
 		return e
 	}
+	return installConfig(c, nil)
+}
+
+func installConfig(c Config, admit func() error) error {
 	if digest(engineBytes) != engineSHA {
 		return errors.New("embedded engine integrity failed")
 	}
@@ -669,11 +702,16 @@ func install(configFile string) error {
 			old.Schema = 2
 			old.API = c.API
 		}
-		if e != nil || validate(old) != nil || old != c {
+		if e != nil || old != c || (legacyInstance(c.Instance) && validate(old) != nil) {
 			return errors.New("existing organisation configuration differs; retained unchanged")
 		}
 	} else if !os.IsNotExist(e) {
 		return e
+	}
+	if admit != nil {
+		if e := admit(); e != nil {
+			return e
+		}
 	}
 	if e := writeJSON(existing, c); e != nil {
 		return e
@@ -732,6 +770,8 @@ func main() {
 	args := os.Args[1:]
 	if len(args) == 1 && strings.HasPrefix(args[0], "organisationos-syncthing:") {
 		err = callback(args[0])
+	} else if len(args) == 3 && args[0] == "install-dev" {
+		err = installDev(args[1], args[2])
 	} else if len(args) == 2 && args[0] == "run" {
 		var c Config
 		c, err = getConfig(args[1])
