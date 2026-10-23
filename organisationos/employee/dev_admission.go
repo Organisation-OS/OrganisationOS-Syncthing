@@ -28,6 +28,10 @@ var devTrustBytes []byte
 
 var errDevAdmission = errors.New("DEV software admission refused; retained unchanged")
 
+// Includes the complete native engine legal/source bundle (137 files in the
+// qualified bundle) plus helper/configuration/provenance, currently 143 total.
+const maxDevPackageFiles = 256
+
 type devTrust struct {
 	Schema          string `json:"schema"`
 	Enabled         bool   `json:"enabled"`
@@ -271,7 +275,7 @@ func validateInstalled(c Config) error {
 // to the ZIP, so its signature has no recursive dependency on the package hash.
 func verifyDevArchive(raw []byte, a admission.Admission, helperSHA string) error {
 	z, e := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
-	if e != nil || len(z.File) > 128 {
+	if e != nil || len(z.File) > maxDevPackageFiles {
 		return errDevAdmission
 	}
 	names := map[string]bool{}

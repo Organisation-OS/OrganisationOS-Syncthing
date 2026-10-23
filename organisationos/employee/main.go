@@ -698,7 +698,7 @@ func installConfig(c Config, admit func() error) error {
 		var old Config
 		e := loadJSON(existing, &old)
 		// Explicit configuration-only upgrade; preserve identity, enrollment, files and conflicts.
-		if e == nil && old.Schema == 1 && old.API == "" {
+		if e == nil && legacyInstance(c.Instance) && old.Schema == 1 && old.API == "" {
 			old.Schema = 2
 			old.API = c.API
 		}

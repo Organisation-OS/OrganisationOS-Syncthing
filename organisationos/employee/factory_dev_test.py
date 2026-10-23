@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 """Synthetic package preparation checks: no helper process, CP or installation."""
-import base64,datetime as dt,hashlib,json,pathlib,tempfile,unittest,zipfile
+import base64,datetime as dt,hashlib,json,os,pathlib,tempfile,unittest,zipfile
 from build_dev import public_trust,VERSION,ENGINE_SHA
 from package_dev import package
 
@@ -52,6 +52,34 @@ class FactoryTests(unittest.TestCase):
         for id in ('27c0be38-60bd-4dce-bb28-ef0088716a25','b7a1f6b1-c4aa-4de7-95fb-29d509d3398d'):
             self.trust['instanceId']=id
             with self.assertRaises(ValueError):public_trust(json.dumps(self.trust).encode())
+
+    def test_actual_native_legal_source_bundle(self):
+        path=os.environ.get('OOS_TEST_LEGAL_BUNDLE')
+        if not path:self.skipTest('requires exact native legal/source bundle')
+        legal=pathlib.Path(path);expected='3823696afb72c9e2b0c00a44614f72678545da1df7b423b7f193d2030af5b814'
+        self.assertEqual(expected,sha(legal.read_bytes()))
+        target=self.root/'native-legal-synthetic-helper.zip'
+        result=package(self.build,self.configfile,legal,expected,target)
+        with zipfile.ZipFile(target) as z:
+            self.assertEqual(143,len(z.infolist()))
+            with zipfile.ZipFile(legal) as original:
+                for f in original.infolist():
+                    if not f.is_dir():self.assertEqual(original.read(f),z.read(f.filename))
+        self.assertEqual(expected,result['provenance']['legalBundleSha256'])
+
+    def test_package_entry_limit_retains_every_notice_or_refuses(self):
+        for notice_count,allowed in ((247,True),(248,False)):
+            legal=self.root/('legal-'+str(notice_count)+'.zip')
+            with zipfile.ZipFile(legal,'w') as z:
+                for name in ('LICENSE.txt','AUTHORS.txt','source-moteur.zip'):z.writestr(name,b'Synthetic')
+                for n in range(notice_count):z.writestr('notices/fixture-'+str(n)+'.txt',b'Synthetic')
+            target=self.root/('package-'+str(notice_count)+'.zip')
+            if allowed:
+                package(self.build,self.configfile,legal,sha(legal.read_bytes()),target)
+                with zipfile.ZipFile(target) as z:self.assertEqual(256,len(z.infolist()))
+            else:
+                with self.assertRaises(ValueError):package(self.build,self.configfile,legal,sha(legal.read_bytes()),target)
+                self.assertFalse(target.exists())
 
 
 if __name__=='__main__':unittest.main()

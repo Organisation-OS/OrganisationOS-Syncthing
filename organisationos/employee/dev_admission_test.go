@@ -8,6 +8,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -244,6 +246,26 @@ func TestDEVHistoryQuotaMissingAndExpiry(t *testing.T) {
 	}
 }
 
+func TestDEVDoesNotMigrateLegacySchemaOrAlterExistingConfiguration(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	_, c, _, _ := devFixture(t)
+	old := c
+	old.Schema = 1
+	old.API = ""
+	os.MkdirAll(home(c), 0700)
+	path := filepath.Join(home(c), "organisation.json")
+	writeJSON(path, old)
+	before, _ := os.ReadFile(path)
+	admitted := false
+	if e := installConfig(c, func() error { admitted = true; return nil }); e == nil || admitted {
+		t.Fatal("DEV schema corruption migrated")
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Fatal("existing configuration changed")
+	}
+}
+
 func TestDEVInstallMutexAndUnsafePaths(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows lifecycle mutex")
@@ -305,4 +327,115 @@ func TestDEVRealEngineStopsAtAdmissionDeadline(t *testing.T) {
 		t.Fatal("expired configuration retained authority")
 	}
 	// TempDir cleanup must succeed: no child may retain the database file handle.
+}
+
+func TestDEVArchiveFileLimitAndDuplicates(t *testing.T) {
+	trust, c, key, now := devFixture(t)
+	helper := []byte("synthetic helper, never executed")
+	for _, count := range []int{maxDevPackageFiles, maxDevPackageFiles + 1} {
+		var buf bytes.Buffer
+		z := zip.NewWriter(&buf)
+		config, _ := json.Marshal(c)
+		for name, data := range map[string][]byte{"organisation.json": config, "OrganisationOS-Syncthing-Installer.exe": helper} {
+			f, _ := z.Create(name)
+			f.Write(data)
+		}
+		for n := 2; n < count; n++ {
+			f, _ := z.Create(fmt.Sprintf("notices/fixture-%03d.txt", n))
+			f.Write([]byte("Synthetic"))
+		}
+		z.Close()
+		raw := signedDev(t, trust, c, key, 1, digest(buf.Bytes()), digest(helper), "dev")
+		a, e := verifyDev(raw, trust, digest(buf.Bytes()), digest(helper), now)
+		if e != nil {
+			t.Fatal(e)
+		}
+		e = verifyDevArchive(buf.Bytes(), a, digest(helper))
+		if (e == nil) != (count == maxDevPackageFiles) {
+			t.Fatal("entry bound", count, e)
+		}
+	}
+	for _, name := range []string{"organisation.json", "../escape", "notices/linked"} {
+		var buf bytes.Buffer
+		z := zip.NewWriter(&buf)
+		config, _ := json.Marshal(c)
+		for path, data := range map[string][]byte{"organisation.json": config, "OrganisationOS-Syncthing-Installer.exe": helper} {
+			f, _ := z.Create(path)
+			f.Write(data)
+		}
+		header := &zip.FileHeader{Name: name}
+		if name == "notices/linked" {
+			header.SetMode(os.ModeSymlink | 0600)
+		}
+		f, _ := z.CreateHeader(header)
+		f.Write([]byte("refused"))
+		z.Close()
+		a, e := verifyDev(signedDev(t, trust, c, key, 1, digest(buf.Bytes()), digest(helper), "dev"), trust, digest(buf.Bytes()), digest(helper), now)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if verifyDevArchive(buf.Bytes(), a, digest(helper)) == nil {
+			t.Fatal("unsafe ZIP accepted", name)
+		}
+	}
+}
+
+func TestDEVActualNativeLegalBundle(t *testing.T) {
+	path := os.Getenv("OOS_TEST_LEGAL_BUNDLE")
+	if path == "" {
+		t.Skip("requires exact native legal/source bundle")
+	}
+	legal, e := os.ReadFile(path)
+	if e != nil || digest(legal) != "3823696afb72c9e2b0c00a44614f72678545da1df7b423b7f193d2030af5b814" {
+		t.Fatal("native legal bundle hash differs", e)
+	}
+	original, e := zip.NewReader(bytes.NewReader(legal), int64(len(legal)))
+	if e != nil {
+		t.Fatal(e)
+	}
+	trust, c, key, now := devFixture(t)
+	helper := []byte("synthetic helper with real legal files, never executed")
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	count := 0
+	for _, f := range original.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		r, e := f.Open()
+		if e != nil {
+			t.Fatal(e)
+		}
+		data, e := io.ReadAll(r)
+		r.Close()
+		if e != nil {
+			t.Fatal(e)
+		}
+		out, e := z.Create(f.Name)
+		if e != nil {
+			t.Fatal(e)
+		}
+		out.Write(data)
+		count++
+	}
+	if count != 137 {
+		t.Fatal("native bundle inventory changed", count)
+	}
+	config, _ := json.Marshal(c)
+	for name, data := range map[string][]byte{"organisation.json": config, "OrganisationOS-Syncthing-Installer.exe": helper, "LICENSE-Go.txt": []byte("Synthetic"), "source-installateur.zip": []byte("Synthetic"), "LIRE-MOI.txt": []byte("Synthetic"), "provenance.json": []byte("Synthetic")} {
+		f, _ := z.Create(name)
+		f.Write(data)
+		count++
+	}
+	z.Close()
+	if count != 143 {
+		t.Fatal("final package count", count)
+	}
+	a, e := verifyDev(signedDev(t, trust, c, key, 1, digest(buf.Bytes()), digest(helper), "dev"), trust, digest(buf.Bytes()), digest(helper), now)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = verifyDevArchive(buf.Bytes(), a, digest(helper)); e != nil {
+		t.Fatal("complete native notices refused", e)
+	}
 }

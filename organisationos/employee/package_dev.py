@@ -8,6 +8,7 @@ import argparse, hashlib, io, json, pathlib, re, zipfile
 from build_dev import VERSION,ENGINE_SHA,public_trust
 
 sha=lambda raw:hashlib.sha256(raw).hexdigest()
+MAX_PACKAGE_FILES=256
 
 
 def package(build_dir,config_file,legal_file,legal_sha,output):
@@ -31,6 +32,7 @@ def package(build_dir,config_file,legal_file,legal_sha,output):
     if len(legal)>256*1024*1024 or not re.fullmatch('[a-f0-9]{64}',legal_sha) or sha(legal)!=legal_sha:raise ValueError('verified legal/source bundle required')
     files={}
     with zipfile.ZipFile(io.BytesIO(legal)) as z:
+        if len(z.infolist())>MAX_PACKAGE_FILES:raise ValueError('legal archive entry bound exceeded')
         for f in z.infolist():
             if f.is_dir():continue
             if not (f.filename.startswith('notices/') or f.filename in ('LICENSE.txt','AUTHORS.txt','source-moteur.zip')):continue
@@ -59,7 +61,7 @@ def package(build_dir,config_file,legal_file,legal_sha,output):
             info=zipfile.ZipInfo(name,date_time=(2026,10,23,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED;info.external_attr=0o100644<<16
             z.writestr(info,raw)
     raw=stream.getvalue();out=pathlib.Path(output)
-    if len(files)>128 or len(raw)>256*1024*1024:raise ValueError('package bounds exceeded')
+    if len(files)>MAX_PACKAGE_FILES or len(raw)>256*1024*1024:raise ValueError('package bounds exceeded')
     with out.open('xb') as f:f.write(raw)
     result=dict(schema='oos-helper-dev-package-v1',status='PREPARED_FOR_NATIVE_CP_SIGNING',filename=out.name,size=len(raw),sha256=sha(raw),
         installationId=trust['installationId'],instanceId=trust['instanceId'],applicationId=trust['applicationId'],provenance=provenance)

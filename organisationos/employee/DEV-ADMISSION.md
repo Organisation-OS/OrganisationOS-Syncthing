@@ -65,6 +65,13 @@ identique à celle du ZIP. Aucun chemin du ZIP n'est extrait ; seuls les contenu
 attendus sont lus. Noms dupliqués, traversées et entrées symboliques sont refusés.
 Ces vérifications précèdent toute écriture dans le profil et tout démarrage.
 
+Le plafond cohérent fabricant/vérificateur est **256 entrées**. Le bundle légal
+natif vérifié `3823696afb72c9e2b0c00a44614f72678545da1df7b423b7f193d2030af5b814`
+contient 137 fichiers, soit 143 après ajout du helper, de sa configuration et de sa
+provenance. Aucun fichier légal n'est supprimé pour satisfaire un plafond. Les
+tests couvrent ce bundle exact, 256 accepté et 257 refusé, doublons/traversées/liens
+toujours refusés. `OOS_TEST_LEGAL_BUNDLE` indique sa copie protégée au lanceur.
+
 La suite d'installation réutilise le chemin natif : identité unique, moteur par
 instance, GUI locale protégée, protocole Windows, autostart utilisateur, preuve
 native et navigateur. Une configuration existante différente est conservée et
