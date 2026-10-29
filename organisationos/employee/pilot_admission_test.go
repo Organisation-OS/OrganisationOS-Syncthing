@@ -150,7 +150,8 @@ func TestPilotRealEngineExpiresAndRetainsFiles(t *testing.T) {
 	canary := filepath.Join(home(c), "preserve-local-write.txt")
 	os.WriteFile(canary, []byte("synthetic-write"), 0600)
 	now := time.Now().UTC()
-	a.ExpiresAt = now.Add(2 * time.Second).Format(time.RFC3339Nano)
+	deadline := now.Add(10 * time.Second)
+	a.ExpiresAt = deadline.Format(time.RFC3339Nano)
 	hash, e := selfSHA()
 	if e != nil {
 		t.Fatal(e)
@@ -163,9 +164,8 @@ func TestPilotRealEngineExpiresAndRetainsFiles(t *testing.T) {
 	pilotTrustBytes = mustJSON(pilotTrust{"oos-helper-pilot-trust-v1", true, []devTrust{a}})
 	defer func() { pilotTrustBytes = old }()
 	writeJSON(filepath.Join(home(c), "organisation.json"), c)
-	started := time.Now()
 	e = run(c, engine)
-	if e == nil || e.Error() != "local engine stopped; files retained" || time.Since(started) < time.Second || time.Since(started) > 5*time.Second {
+	if e == nil || e.Error() != "local engine stopped; files retained" || time.Now().Before(deadline) || time.Since(deadline) > 5*time.Second {
 		t.Fatal("pilot expiration", e)
 	}
 	if validateInstalled(c) == nil {

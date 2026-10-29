@@ -308,7 +308,8 @@ func TestDEVRealEngineStopsAtAdmissionDeadline(t *testing.T) {
 		t.Fatal(e)
 	}
 	now := time.Now().UTC()
-	trust.ExpiresAt = now.Add(2 * time.Second).Format(time.RFC3339Nano)
+	deadline := now.Add(10 * time.Second)
+	trust.ExpiresAt = deadline.Format(time.RFC3339Nano)
 	hash, e := selfSHA()
 	if e != nil {
 		t.Fatal(e)
@@ -321,9 +322,8 @@ func TestDEVRealEngineStopsAtAdmissionDeadline(t *testing.T) {
 	devTrustBytes, _ = json.Marshal(trust)
 	defer func() { devTrustBytes = old }()
 	writeJSON(filepath.Join(home(c), "organisation.json"), c)
-	started := time.Now()
 	e = run(c, engine)
-	if e == nil || e.Error() != "local engine stopped; files retained" || time.Since(started) < time.Second || time.Since(started) > 5*time.Second {
+	if e == nil || e.Error() != "local engine stopped; files retained" || time.Now().Before(deadline) || time.Since(deadline) > 5*time.Second {
 		t.Fatal("deadline did not terminate engine", e)
 	}
 	if validateInstalled(c) == nil {

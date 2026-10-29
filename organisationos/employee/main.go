@@ -633,22 +633,32 @@ func run(c Config, engine string) error {
 		return e
 	}
 	defer release()
-	command := engineServeCommand(c, engine)
-	if e = command.Start(); e != nil {
-		return e
-	}
-	defer command.Process.Kill()
+	var deadline time.Time
 	if pilotEnabled() || !legacyInstance(c.Instance) {
+		// Hashing and lock acquisition may consume the remaining admission time.
+		// Recheck before creating a process, without extending the signed deadline.
 		trust, err := installedTrust(c.Instance, time.Now())
 		if err != nil {
 			return err
 		}
-		deadline, _ := time.Parse(time.RFC3339, trust.ExpiresAt)
+		deadline, _ = time.Parse(time.RFC3339, trust.ExpiresAt)
+	}
+	command := engineServeCommand(c, engine)
+	if e = command.Start(); e != nil {
+		return e
+	}
+	// Own Wait immediately after Start, including every early failure below.
+	// A closed channel permits both the select and deferred cleanup to observe exit.
+	done := make(chan struct{})
+	go func() { _ = command.Wait(); close(done) }()
+	defer func() {
+		_ = command.Process.Kill()
+		<-done // Release the lifecycle lock only after the engine has exited.
+	}()
+	if !deadline.IsZero() {
 		stop := time.AfterFunc(time.Until(deadline), func() { _ = command.Process.Kill() })
 		defer stop.Stop()
 	}
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
 	timer := time.NewTimer(3 * time.Second)
 	defer timer.Stop()
 	for {
