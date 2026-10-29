@@ -44,6 +44,8 @@ type devTrust struct {
 	MinimumSequence int64  `json:"minimumSequence"`
 	NotBefore       string `json:"notBefore"`
 	ExpiresAt       string `json:"expiresAt"`
+	PortalOrigin    string `json:"portalOrigin,omitempty"`
+	PublicEndpoint  string `json:"publicEndpoint,omitempty"`
 }
 
 func legacyInstance(id string) bool {
@@ -51,7 +53,14 @@ func legacyInstance(id string) bool {
 }
 
 func readDevTrust(raw []byte, now time.Time) (devTrust, error) {
+	return readScopedTrust(raw, now, false)
+}
+
+func readScopedTrust(raw []byte, now time.Time, pilot bool) (devTrust, error) {
 	var t devTrust
+	if !admission.ValidJSON(raw) {
+		return t, errDevAdmission
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if len(raw) > 4096 || dec.Decode(&t) != nil {
@@ -64,9 +73,16 @@ func readDevTrust(raw []byte, now time.Time) (devTrust, error) {
 	key, e := base64.StdEncoding.Strict().DecodeString(t.PublicKey)
 	start, e1 := time.Parse(time.RFC3339, t.NotBefore)
 	end, e2 := time.Parse(time.RFC3339, t.ExpiresAt)
-	if t.Schema != "oos-helper-dev-trust-v1" || !t.Enabled || t.Audience != "dev" || e != nil || len(key) != ed25519.PublicKeySize ||
-		!uuidPattern.MatchString(t.InstallationID) || !uuidPattern.MatchString(t.InstanceID) || legacyInstance(t.InstanceID) ||
-		t.ApplicationID == "" || t.MinimumSequence < 1 || e1 != nil || e2 != nil || !start.Before(end) || end.Sub(start) > 24*time.Hour || now.Before(start) || !now.Before(end) {
+	schema, audience, duration := "oos-helper-dev-trust-v1", "dev", 24*time.Hour
+	if pilot {
+		schema, audience, duration = "oos-helper-pilot-anchor-v1", "pilot", 30*24*time.Hour
+	}
+	if t.Schema != schema || !t.Enabled || t.Audience != audience || e != nil || len(key) != ed25519.PublicKeySize ||
+		!uuidPattern.MatchString(t.InstallationID) || !uuidPattern.MatchString(t.InstanceID) || (!pilot && legacyInstance(t.InstanceID)) ||
+		t.ApplicationID == "" || t.MinimumSequence < 1 || e1 != nil || e2 != nil || !start.Before(end) || end.Sub(start) > duration || now.Before(start) || !now.Before(end) {
+		return t, errDevAdmission
+	}
+	if !admission.ValidOrigin(t.APIOrigin) || (pilot && (!admission.ValidOrigin(t.PortalOrigin) || !admission.ValidEndpoint(t.PublicEndpoint))) || (!pilot && (t.PortalOrigin != "" || t.PublicEndpoint != "")) {
 		return t, errDevAdmission
 	}
 	return t, nil
@@ -75,7 +91,7 @@ func readDevTrust(raw []byte, now time.Time) (devTrust, error) {
 func verifyDev(raw []byte, trust devTrust, packageSHA, helperSHA string, now time.Time) (admission.Admission, error) {
 	// Re-evaluate the compiled policy at every boundary, including receipt reads.
 	encoded, _ := json.Marshal(trust)
-	if _, e := readDevTrust(encoded, now); e != nil {
+	if _, e := readScopedTrust(encoded, now, trust.Schema == "oos-helper-pilot-anchor-v1"); e != nil {
 		return admission.Admission{}, e
 	}
 	key, _ := base64.StdEncoding.Strict().DecodeString(trust.PublicKey)
@@ -94,8 +110,11 @@ func verifyDev(raw []byte, trust devTrust, packageSHA, helperSHA string, now tim
 			} `json:"package"`
 		} `json:"payload"`
 	}
-	if json.Unmarshal(raw, &envelope) != nil || envelope.Payload.Package.Provenance.Audience != "dev" || envelope.Payload.Package.Provenance.Version != version {
+	if json.Unmarshal(raw, &envelope) != nil || envelope.Payload.Package.Provenance.Audience != trust.Audience || envelope.Payload.Package.Provenance.Version != version {
 		return result, errDevAdmission
+	}
+	if trust.Audience == "pilot" && (result.Config.Portal != trust.PortalOrigin || result.Config.Address != trust.PublicEndpoint) {
+		return admission.Admission{}, errDevAdmission
 	}
 	return result, nil
 }
@@ -160,7 +179,11 @@ func selfSHA() (string, error) {
 }
 
 func receiptDirectory(t devTrust) string {
-	return filepath.Join(base(), "Organisations", t.InstanceID, "AdmissionDEV")
+	scope := "AdmissionDEV"
+	if t.Audience == "pilot" {
+		scope = "AdmissionPilot"
+	}
+	return filepath.Join(base(), "Organisations", t.InstanceID, scope)
 }
 
 // Bounded append-only receipts retain previous admissions. This detects replay
@@ -189,7 +212,7 @@ func latestDevReceipt(t devTrust, helperSHA string, now time.Time) (admission.Ad
 			return latest, errDevAdmission
 		}
 		var r devReceipt
-		if json.Unmarshal(raw, &r) != nil || r.Schema != "oos-helper-dev-receipt-v1" {
+		if json.Unmarshal(raw, &r) != nil || r.Schema != receiptSchema(t) {
 			return latest, errDevAdmission
 		}
 		a, e := verifyDev(r.Envelope, t, r.PackageSHA, helperSHA, now)
@@ -230,7 +253,7 @@ func storeDevReceipt(t devTrust, raw []byte, packageSHA, helperSHA string, now t
 	if e != nil || len(entries) >= 64 {
 		return errDevAdmission
 	}
-	data, e := json.Marshal(devReceipt{"oos-helper-dev-receipt-v1", packageSHA, raw})
+	data, e := json.Marshal(devReceipt{receiptSchema(t), packageSHA, raw})
 	if e != nil {
 		return e
 	}
@@ -252,10 +275,10 @@ func storeDevReceipt(t devTrust, raw []byte, packageSHA, helperSHA string, now t
 }
 
 func validateInstalled(c Config) error {
-	if legacyInstance(c.Instance) {
+	if !pilotEnabled() && legacyInstance(c.Instance) {
 		return validate(c)
 	}
-	t, e := readDevTrust(devTrustBytes, time.Now())
+	t, e := installedTrust(c.Instance, time.Now())
 	if e != nil || c.Instance != t.InstanceID {
 		return errDevAdmission
 	}
@@ -330,6 +353,10 @@ func installDev(packageFile, envelopeFile string) error {
 	if e != nil {
 		return e
 	}
+	return installAdmitted(packageFile, envelopeFile, t, now)
+}
+
+func installAdmitted(packageFile, envelopeFile string, t devTrust, now time.Time) error {
 	helperSHA, e := selfSHA()
 	if e != nil {
 		return e
@@ -360,8 +387,16 @@ func installDev(packageFile, envelopeFile string) error {
 	defer release()
 	if _, e = os.Lstat(filepath.Join(home(Config(a.Config)), "organisation.json")); e == nil {
 		prior, priorErr := latestDevReceipt(t, helperSHA, time.Now())
-		if priorErr != nil || prior.Sequence == 0 {
+		if priorErr != nil {
 			return errDevAdmission
+		}
+		if prior.Sequence == 0 {
+			// A first signed pilot receipt may adopt only an exact schema2
+			// historical configuration. Identity, enrollment and files stay put.
+			var old Config
+			if t.Audience != "pilot" || loadJSON(filepath.Join(home(Config(a.Config)), "organisation.json"), &old) != nil || validateLegacy(old) != nil || old != Config(a.Config) {
+				return errDevAdmission
+			}
 		}
 	} else if !os.IsNotExist(e) {
 		return errDevAdmission

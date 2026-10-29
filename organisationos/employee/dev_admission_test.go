@@ -25,7 +25,7 @@ func devFixture(t *testing.T) (devTrust, Config, ed25519.PrivateKey, time.Time) 
 		t.Fatal(e)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	trust := devTrust{"oos-helper-dev-trust-v1", true, "dev", base64.StdEncoding.EncodeToString(pub), "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "https://dev.synthetic.invalid:18443", "syncthing", 1, now.Add(-time.Hour).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339)}
+	trust := devTrust{"oos-helper-dev-trust-v1", true, "dev", base64.StdEncoding.EncodeToString(pub), "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "https://dev.synthetic.invalid:18443", "syncthing", 1, now.Add(-time.Hour).Format(time.RFC3339), now.Add(time.Hour).Format(time.RFC3339), "", ""}
 	c := Config{2, trust.InstanceID, "https://portal.synthetic.invalid", trust.APIOrigin, "Synthetic", strings.Repeat("AAAAAAA-", 7) + "AAAAAAA", "tcp://sync.synthetic.invalid:22223"}
 	return trust, c, key, now
 }
@@ -294,6 +294,9 @@ func TestDEVInstallMutexAndUnsafePaths(t *testing.T) {
 }
 
 func TestDEVRealEngineStopsAtAdmissionDeadline(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("requires native Windows lifecycle lock; Linux engine transport alone is insufficient")
+	}
 	engine := os.Getenv("OOS_TEST_ENGINE")
 	if engine == "" {
 		t.Skip("requires explicit isolated native engine")

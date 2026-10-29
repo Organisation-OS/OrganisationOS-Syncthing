@@ -12,7 +12,7 @@ import (
 // caller displays the exact native Portal URI in its own isolated browser.
 // Callback codes travel on stdin, never on a process command line or in logs.
 func clientInvocation(args []string, input io.Reader, output io.Writer) (bool, int) {
-	if len(args) == 0 || (args[0] != "install-dev-client" && args[0] != "connect-client" && args[0] != "callback-client") {
+	if len(args) == 0 || (args[0] != "install-dev-client" && args[0] != "install-pilot-client" && args[0] != "connect-client" && args[0] != "callback-client") {
 		return false, 0
 	}
 	oldBrowser := openBrowser
@@ -51,6 +51,9 @@ func clientInvocation(args []string, input io.Reader, output io.Writer) (bool, i
 }
 
 func performClientInvocation(args []string, input io.Reader) error {
+	if args[0] == "install-pilot-client" && len(args) == 4 {
+		return installPilot(args[1], args[2], args[3])
+	}
 	if args[0] == "install-dev-client" && len(args) == 3 {
 		return installDev(args[1], args[2])
 	}

@@ -34,7 +34,7 @@ import (
 
 var errRunning = errors.New("employee helper already running")
 
-const version = "0.3.6-dev.1"
+const version = "0.3.7-pilot.1"
 const engineSHA = "14421c4afbe5b48ddd9065410310f6fd667d678ae5943bd9520f28f261d8eb4b"
 
 //go:embed assets/engine.bin
@@ -136,6 +136,12 @@ func loadJSON(path string, v any) error {
 	return json.Unmarshal(b, v)
 }
 func validate(c Config) error {
+	if pilotEnabled() {
+		return errDevAdmission
+	}
+	return validateLegacy(c)
+}
+func validateLegacy(c Config) error {
 	known := map[string][3]string{"27c0be38-60bd-4dce-bb28-ef0088716a25": {"https://portal.thecgp.com", "tcp://syncthing.thecgp.com:22000", "https://portal.thecgp.com"}, "b7a1f6b1-c4aa-4de7-95fb-29d509d3398d": {"https://portal.villesadp.ca", "tcp://syncthing.villesadp.ca:22000", "https://api.villesadp.ca"}}
 	p, ok := known[c.Instance]
 	if !ok || c.Schema != 2 || c.API != p[2] || c.Portal != p[0] || c.Address != p[1] || !keyPattern.MatchString(c.Server) || c.Name == "" || len(c.Name) > 120 {
@@ -632,8 +638,8 @@ func run(c Config, engine string) error {
 		return e
 	}
 	defer command.Process.Kill()
-	if !legacyInstance(c.Instance) {
-		trust, err := readDevTrust(devTrustBytes, time.Now())
+	if pilotEnabled() || !legacyInstance(c.Instance) {
+		trust, err := installedTrust(c.Instance, time.Now())
 		if err != nil {
 			return err
 		}
@@ -704,11 +710,11 @@ func installConfig(c Config, admit func() error) error {
 		var old Config
 		e := loadJSON(existing, &old)
 		// Explicit configuration-only upgrade; preserve identity, enrollment, files and conflicts.
-		if e == nil && legacyInstance(c.Instance) && old.Schema == 1 && old.API == "" {
+		if e == nil && !pilotEnabled() && legacyInstance(c.Instance) && old.Schema == 1 && old.API == "" {
 			old.Schema = 2
 			old.API = c.API
 		}
-		if e != nil || old != c || (legacyInstance(c.Instance) && validate(old) != nil) {
+		if e != nil || old != c || (!pilotEnabled() && legacyInstance(c.Instance) && validateLegacy(old) != nil) {
 			return errors.New("existing organisation configuration differs; retained unchanged")
 		}
 	} else if !os.IsNotExist(e) {
@@ -779,6 +785,8 @@ func main() {
 	}
 	if len(args) == 1 && strings.HasPrefix(args[0], "organisationos-syncthing:") {
 		err = callback(args[0])
+	} else if len(args) == 4 && args[0] == "install-pilot" {
+		err = installPilot(args[1], args[2], args[3])
 	} else if len(args) == 3 && args[0] == "install-dev" {
 		err = installDev(args[1], args[2])
 	} else if len(args) == 2 && args[0] == "run" {

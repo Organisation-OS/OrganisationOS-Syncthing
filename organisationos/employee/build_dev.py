@@ -40,6 +40,7 @@ def public_trust(raw):
 
 
 def build(trust_file,engine_file,output,go):
+    if ('const version = '+json.dumps(VERSION)) not in (HERE/'main.go').read_text():raise ValueError('factory version differs from helper; select matching factory')
     raw=pathlib.Path(trust_file).read_bytes();trust=public_trust(raw)
     engine=pathlib.Path(engine_file).read_bytes()
     if sha(engine)!=ENGINE_SHA:raise ValueError('qualified engine hash mismatch')

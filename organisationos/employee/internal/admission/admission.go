@@ -333,3 +333,8 @@ func canonicalJSON(value any) ([]byte, error) {
 	}
 	return out.Bytes(), nil
 }
+
+// Closed public input checks shared by DEV and pilot factory anchors.
+func ValidJSON(raw []byte) bool   { _, e := parse(raw); return e == nil }
+func ValidOrigin(s string) bool   { return origin(s) }
+func ValidEndpoint(s string) bool { return endpoint(s) }
